@@ -1,0 +1,1376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>RK Group - Staff Sales App (Enhanced with Inventory)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        * { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        
+        .touch-target { min-height: 48px; }
+        
+        .offline-banner {
+            background: #f59e0b;
+            color: white;
+            padding: 8px;
+            text-align: center;
+            font-size: 12px;
+            font-weight: 600;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            transform: translateY(-100%);
+            transition: transform 0.3s;
+        }
+        .offline-banner.show { transform: translateY(0); }
+        
+        .item-card {
+            transition: all 0.2s;
+            border: 2px solid transparent;
+            position: relative;
+        }
+        .item-card:active { transform: scale(0.95); }
+        .item-card.selected {
+            border-color: #3b82f6;
+            background: #eff6ff;
+        }
+        
+        .item-card.low-stock {
+            border-color: #ef4444;
+            background: #fef2f2;
+        }
+        
+        .item-card.out-of-stock {
+            opacity: 0.5;
+            pointer-events: none;
+            background: #f3f4f6;
+        }
+        
+        .stock-badge {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: #ef4444;
+            color: white;
+            font-size: 10px;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 10px;
+            z-index: 10;
+        }
+        
+        .stock-badge.ok {
+            background: #10b981;
+        }
+        
+        .qty-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        .qty-btn:active { transform: scale(0.9); }
+        
+        .bill-sent {
+            animation: slideUp 0.5s ease-out;
+        }
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        .login-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.95);
+            z-index: 200;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .menu-container {
+            padding-bottom: 400px;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        
+        .manager-badge {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 10px;
+            font-weight: bold;
+        }
+        
+        .sync-indicator {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        .stock-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 300;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .stock-modal.show { display: flex; }
+        
+        .low-stock-alert {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            border: 2px solid #f59e0b;
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 16px;
+            display: none;
+        }
+        
+        .low-stock-alert.show { display: block; }
+    </style>
+</head>
+<body class="bg-slate-100">
+    <!-- Offline Indicator -->
+    <div id="offlineBanner" class="offline-banner">
+        <i class="fas fa-wifi-slash mr-2"></i>Offline Mode - Will sync when online
+    </div>
+
+    <!-- Low Stock Alert Banner -->
+    <div id="lowStockAlert" class="low-stock-alert mx-4 mt-2">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center">
+                <i class="fas fa-exclamation-triangle text-amber-600 mr-2"></i>
+                <span class="text-sm font-bold text-amber-800">Low Stock Alert!</span>
+            </div>
+            <button onclick="viewLowStock()" class="text-xs bg-amber-600 text-white px-3 py-1 rounded-full">View</button>
+        </div>
+        <p class="text-xs text-amber-700 mt-1" id="lowStockMessage">Some items are running low</p>
+    </div>
+
+    <!-- Staff Login Overlay -->
+    <div id="loginOverlay" class="login-overlay">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-sm mx-4">
+            <div class="text-center mb-6">
+                <div class="w-16 h-16 bg-gradient-to-br from-orange-500 to-red-600 rounded-2xl flex items-center justify-center text-white font-bold text-2xl mx-auto mb-4">RK</div>
+                <h2 class="text-xl font-bold text-slate-800">Staff Login</h2>
+                <p class="text-sm text-slate-500 mt-1">Enhanced with Inventory</p>
+            </div>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Staff ID</label>
+                    <input type="text" id="staffId" placeholder="e.g., RK-103" 
+                        class="w-full border border-slate-300 rounded-xl px-4 py-3 text-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-center uppercase">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Train Number</label>
+                    <input type="text" id="trainNumber" placeholder="e.g., 12649" 
+                        class="w-full border border-slate-300 rounded-xl px-4 py-3 text-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-center">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Password</label>
+                    <input type="password" id="staffPassword" placeholder="Enter password" 
+                        class="w-full border border-slate-300 rounded-xl px-4 py-3 text-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-center">
+                    <p class="text-xs text-slate-400 mt-1">Default: 1234 (Manager: admin)</p>
+                </div>
+                <button onclick="login()" class="w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-lg hover:bg-blue-700 transition shadow-lg">
+                    Start Selling
+                </button>
+            </div>
+            
+            <div class="mt-4 text-center">
+                <p class="text-xs text-slate-400">Manager can manage stock & menu</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App (Hidden until login) -->
+    <div id="mainApp" class="hidden pb-80">
+        <!-- Header -->
+        <div class="bg-white shadow-sm sticky top-0 z-10">
+            <div class="px-4 py-3">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 bg-gradient-to-br from-orange-500 to-red-600 rounded-xl flex items-center justify-center text-white font-bold">RK</div>
+                        <div>
+                            <p class="font-bold text-slate-800 text-sm" id="displayTrain">Train --</p>
+                            <div class="flex items-center space-x-2">
+                                <p class="text-xs text-slate-500" id="displayStaff">Staff: --</p>
+                                <span id="managerBadge" class="manager-badge hidden">MANAGER</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <button onclick="showStockManager()" id="stockBtn" class="hidden text-amber-600 hover:text-amber-800 transition mr-2" title="Manage Stock">
+                            <i class="fas fa-boxes text-lg"></i>
+                        </button>
+                        <button onclick="toggleManageMode()" id="manageBtn" class="hidden text-purple-600 hover:text-purple-800 transition mr-2" title="Manage Menu">
+                            <i class="fas fa-cog text-lg"></i>
+                        </button>
+                        <button onclick="viewPending()" class="text-slate-400 hover:text-blue-500 transition mr-2 relative">
+                            <i class="fas fa-sync-alt text-lg"></i>
+                            <span id="pendingBadge" class="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center hidden">0</span>
+                        </button>
+                        <div id="syncStatus" class="flex items-center text-xs text-green-600 bg-green-50 px-2 py-1 rounded-lg">
+                            <i class="fas fa-check-circle mr-1"></i>Synced
+                        </div>
+                        <button onclick="logout()" class="text-slate-400 hover:text-red-500 transition">
+                            <i class="fas fa-sign-out-alt text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Stats -->
+        <div class="bg-blue-600 text-white px-4 py-3">
+            <div class="flex justify-between items-center">
+                <div>
+                    <p class="text-xs text-blue-200">Today's Sales</p>
+                    <p class="text-2xl font-bold" id="todaySales">₹0</p>
+                </div>
+                <div class="text-right">
+                    <p class="text-xs text-blue-200">Transactions</p>
+                    <p class="text-xl font-bold" id="todayCount">0</p>
+                </div>
+                <div class="text-right border-l border-blue-500 pl-4">
+                    <p class="text-xs text-blue-200">Low Stock</p>
+                    <p class="text-xl font-bold text-amber-300" id="lowStockCount">0</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Manage Mode Banner (Only for Manager) -->
+        <div id="manageBanner" class="hidden bg-purple-600 text-white px-4 py-2 text-center">
+            <p class="text-sm font-medium"><i class="fas fa-cog mr-2"></i>Manager Mode: Tap items to edit prices</p>
+        </div>
+
+        <!-- Stock Manager Banner -->
+        <div id="stockBanner" class="hidden bg-amber-600 text-white px-4 py-2 text-center">
+            <p class="text-sm font-medium"><i class="fas fa-boxes mr-2"></i>Stock Manager Mode: Manage inventory levels</p>
+        </div>
+
+        <!-- Menu Grid -->
+        <div class="px-4 py-4 menu-container no-scrollbar">
+            <div class="flex justify-between items-center mb-3">
+                <p class="text-sm font-semibold text-slate-700">Select Items</p>
+                <div class="flex space-x-2">
+                    <span class="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full" id="stockStatus">Stock OK</span>
+                    <button onclick="refreshMenu()" class="text-xs text-blue-600 hover:text-blue-800">
+                        <i class="fas fa-refresh mr-1"></i>Refresh
+                    </button>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-3" id="menuGrid">
+                <div class="col-span-2 text-center py-8 text-slate-400">
+                    <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                    <p>Loading menu & inventory...</p>
+                </div>
+            </div>
+            
+            <!-- Add New Item Button (Manager Only) -->
+            <button onclick="showAddItemModal()" id="addItemBtn" class="hidden w-full mt-6 mb-8 py-4 bg-purple-600 text-white rounded-xl font-bold hover:bg-purple-700 transition shadow-lg flex items-center justify-center">
+                <i class="fas fa-plus mr-2"></i>Add New Food Item
+            </button>
+            
+            <div class="h-20"></div>
+        </div>
+    </div>
+
+    <!-- Current Order (Fixed Bottom) -->
+    <div class="fixed bottom-0 left-0 right-0 bg-white shadow-2xl border-t border-slate-200 z-40 max-h-[45vh] overflow-y-auto">
+        <div class="p-4 max-w-md mx-auto">
+            <!-- Order Items List -->
+            <div id="orderList" class="mb-3 max-h-32 overflow-y-auto">
+                <p class="text-slate-400 text-center py-2 text-sm">No items selected</p>
+            </div>
+            
+            <!-- Total & Actions -->
+            <div class="flex items-center justify-between mb-3 pt-2 border-t border-slate-100">
+                <div>
+                    <p class="text-xs text-slate-500">Total Amount</p>
+                    <p class="text-3xl font-bold text-slate-800" id="orderTotal">₹0</p>
+                </div>
+                <div class="text-right">
+                    <p class="text-xs text-slate-500">Items</p>
+                    <p class="text-lg font-bold text-blue-600" id="itemCount">0</p>
+                </div>
+            </div>
+
+            <!-- Customer Phone Input -->
+            <div class="mb-3">
+                <input type="tel" id="customerPhone" placeholder="Customer Mobile Number (for SMS bill)" 
+                    class="w-full border border-slate-300 rounded-xl px-4 py-3 text-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    maxlength="10">
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="grid grid-cols-3 gap-3">
+                <button onclick="clearOrder()" class="py-3 border-2 border-slate-300 rounded-xl text-slate-600 font-semibold hover:bg-slate-50 transition">
+                    Clear
+                </button>
+                <button onclick="saveOffline()" class="py-3 border-2 border-blue-300 rounded-xl text-blue-600 font-semibold hover:bg-blue-50 transition">
+                    Save
+                </button>
+                <button onclick="generateBill()" id="billBtn" class="py-3 bg-green-500 text-white rounded-xl font-bold hover:bg-green-600 transition shadow-lg flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <i class="fas fa-paper-plane"></i>
+                    <span>Send Bill</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bill Sent Modal -->
+    <div id="billModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-sm text-center bill-sent">
+            <div class="w-20 h-20 mx-auto bg-green-100 rounded-full flex items-center justify-center mb-4">
+                <i class="fas fa-check-circle text-4xl text-green-600"></i>
+            </div>
+            <h3 class="text-xl font-bold text-slate-800 mb-2">Bill Sent!</h3>
+            <p class="text-slate-600 mb-4">SMS receipt sent to customer</p>
+            <div class="bg-slate-50 rounded-xl p-4 mb-4 text-left">
+                <p class="text-xs text-slate-500 mb-1">Transaction ID</p>
+                <p class="font-mono font-bold text-slate-800" id="transactionId">#TXN123456</p>
+                <p class="text-xs text-slate-500 mt-2 mb-1">Amount</p>
+                <p class="text-2xl font-bold text-green-600" id="modalAmount">₹0</p>
+            </div>
+            <button onclick="closeBillModal()" class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition">
+                New Order
+            </button>
+        </div>
+    </div>
+
+    <!-- Stock Manager Modal -->
+    <div id="stockManagerModal" class="stock-modal">
+        <div class="bg-white rounded-2xl w-full max-w-md max-h-[80vh] overflow-hidden">
+            <div class="p-4 border-b border-slate-200 flex justify-between items-center bg-amber-50">
+                <h3 class="font-bold text-slate-800 flex items-center">
+                    <i class="fas fa-boxes text-amber-600 mr-2"></i>Stock Manager
+                </h3>
+                <button onclick="closeStockManager()" class="text-slate-400 hover:text-slate-600">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <div class="p-4 overflow-y-auto max-h-[60vh]">
+                <div id="stockList" class="space-y-3">
+                    <!-- Stock items loaded here -->
+                </div>
+            </div>
+            <div class="p-4 border-t border-slate-200 bg-slate-50">
+                <button onclick="closeStockManager()" class="w-full bg-slate-600 text-white py-3 rounded-xl font-bold hover:bg-slate-700 transition">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Update Stock Modal -->
+    <div id="updateStockModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl w-full max-w-sm p-6">
+            <h3 class="text-lg font-bold text-slate-800 mb-4">Update Stock</h3>
+            <input type="hidden" id="updateStockItemId">
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-slate-700 mb-2">Item</label>
+                <p id="updateStockItemName" class="text-lg font-bold text-slate-800"></p>
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-slate-700 mb-2">Add Stock Quantity</label>
+                <input type="number" id="addStockQty" placeholder="Enter quantity to add" 
+                    class="w-full border border-slate-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-amber-500 outline-none">
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-slate-700 mb-2">Minimum Alert Level</label>
+                <input type="number" id="minStockLevel" placeholder="Alert when below this" 
+                    class="w-full border border-slate-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-amber-500 outline-none">
+            </div>
+            <div class="flex space-x-3">
+                <button onclick="closeUpdateStockModal()" class="flex-1 py-3 border border-slate-300 rounded-xl text-slate-700 font-medium hover:bg-slate-50">Cancel</button>
+                <button onclick="saveStockUpdate()" class="flex-1 py-3 bg-amber-600 text-white rounded-xl font-bold hover:bg-amber-700">Update Stock</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Item Modal (Manager Only) -->
+    <div id="editItemModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
+            <h3 class="text-lg font-bold text-slate-800 mb-4">Edit Item</h3>
+            <input type="hidden" id="editItemId">
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Item Name</label>
+                    <input type="text" id="editItemName" class="w-full border border-slate-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Price (₹)</label>
+                    <input type="number" id="editItemPrice" class="w-full border border-slate-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 outline-none">
+                </div>
+                <div class="flex space-x-3">
+                    <button onclick="closeEditModal()" class="flex-1 py-3 border border-slate-300 rounded-xl text-slate-700 font-medium hover:bg-slate-50">Cancel</button>
+                    <button onclick="updateItem()" class="flex-1 py-3 bg-purple-600 text-white rounded-xl font-bold hover:bg-purple-700">Save</button>
+                </div>
+                <button onclick="deleteItem()" class="w-full py-3 bg-red-100 text-red-600 rounded-xl font-medium hover:bg-red-200 mt-2">
+                    <i class="fas fa-trash mr-2"></i>Delete Item
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Item Modal (Manager Only) -->
+    <div id="addItemModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-sm">
+            <h3 class="text-lg font-bold text-slate-800 mb-4">Add New Food Item</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Item Name</label>
+                    <input type="text" id="newItemName" placeholder="e.g., Special Thali" class="w-full border border-slate-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Price (₹)</label>
+                    <input type="number" id="newItemPrice" placeholder="Enter price" class="w-full border border-slate-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Initial Stock</label>
+                    <input type="number" id="newItemStock" placeholder="Enter initial stock quantity" class="w-full border border-slate-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Min Stock Alert Level</label>
+                    <input type="number" id="newItemMinStock" placeholder="Alert when stock below this" value="10" class="w-full border border-slate-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Icon</label>
+                    <select id="newItemIcon" class="w-full border border-slate-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 outline-none">
+                        <option value="fa-utensils">🍽️ Food (General)</option>
+                        <option value="fa-glass-water">💧 Water/Drink</option>
+                        <option value="fa-mug-hot">☕ Tea/Coffee</option>
+                        <option value="fa-bowl-rice">🍚 Rice Item</option>
+                        <option value="fa-bread-slice">🍞 Bread/Snack</option>
+                        <option value="fa-cookie">🍪 Snack</option>
+                        <option value="fa-ice-cream">🍦 Dessert</option>
+                        <option value="fa-drumstick-bite">🍗 Chicken/Non-veg</option>
+                        <option value="fa-egg">🥚 Egg Item</option>
+                        <option value="fa-bottle-water">🥤 Cold Drink</option>
+                    </select>
+                </div>
+                <div class="flex space-x-3">
+                    <button onclick="closeAddModal()" class="flex-1 py-3 border border-slate-300 rounded-xl text-slate-700 font-medium hover:bg-slate-50">Cancel</button>
+                    <button onclick="addNewItem()" class="flex-1 py-3 bg-purple-600 text-white rounded-xl font-bold hover:bg-purple-700">Add Item</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pending Sales Modal -->
+    <div id="pendingModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-md max-h-[80vh] overflow-hidden">
+            <div class="p-4 border-b border-slate-200 flex justify-between items-center">
+                <h3 class="font-bold text-slate-800">Pending Sales (<span id="pendingCountModal">0</span>)</h3>
+                <button onclick="closePendingModal()" class="text-slate-400 hover:text-slate-600">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <div id="pendingList" class="overflow-y-auto max-h-96 p-4 space-y-3">
+                <!-- Pending items -->
+            </div>
+            <div class="p-4 border-t border-slate-200 bg-slate-50">
+                <button onclick="syncAll()" id="syncAllBtn" class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition">
+                    <i class="fas fa-sync mr-2"></i>Sync All Now
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    
+    <script>
+        // Your Firebase Config
+        const firebaseConfig = {
+            apiKey: "AIzaSyDMcHok-Q-w6a0BwG2w1sFvSxQwgTXlnUg",
+            authDomain: "rk-group-feedback.firebaseapp.com",
+            projectId: "rk-group-feedback",
+            storageBucket: "rk-group-feedback.firebasestorage.app",
+            messagingSenderId: "89598658685",
+            appId: "1:89598658685:web:398d8a06db8bea367ec914"
+        };
+        
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        
+        // App State
+        let currentOrder = [];
+        let staffId = '';
+        let trainNumber = '';
+        let isManager = false;
+        let isOnline = navigator.onLine;
+        let menuItems = [];
+        let inventoryData = {};
+        let manageMode = false;
+        let stockMode = false;
+        
+        // Default menu items
+        const defaultMenu = [
+            { id: 'water', name: 'Rail Neer Water', price: 14, icon: 'fa-glass-water', color: 'blue', mrp: 14 },
+            { id: 'thali-veg', name: 'Veg Thali', price: 80, icon: 'fa-utensils', color: 'green', mrp: 80 },
+            { id: 'thali-nonveg', name: 'Non-Veg Thali', price: 120, icon: 'fa-drumstick-bite', color: 'orange', mrp: 120 },
+            { id: 'biryani-veg', name: 'Veg Biryani', price: 90, icon: 'fa-bowl-rice', color: 'yellow', mrp: 90 },
+            { id: 'biryani-egg', name: 'Egg Biryani', price: 100, icon: 'fa-egg', color: 'orange', mrp: 100 },
+            { id: 'biryani-chicken', name: 'Chicken Biryani', price: 140, icon: 'fa-drumstick-bite', color: 'red', mrp: 140 },
+            { id: 'tea', name: 'Tea', price: 10, icon: 'fa-mug-hot', color: 'amber', mrp: 10 },
+            { id: 'coffee', name: 'Coffee', price: 15, icon: 'fa-mug-hot', color: 'amber', mrp: 15 },
+            { id: 'colddrink', name: 'Cold Drink (300ml)', price: 40, icon: 'fa-bottle-water', color: 'blue', mrp: 40 },
+            { id: 'samosa', name: 'Samosa (2pcs)', price: 25, icon: 'fa-cookie', color: 'yellow', mrp: 25 },
+            { id: 'bread-omelette', name: 'Bread Omelette', price: 35, icon: 'fa-bread-slice', color: 'orange', mrp: 35 },
+            { id: 'sandwich', name: 'Veg Sandwich', price: 30, icon: 'fa-bread-slice', color: 'green', mrp: 30 }
+        ];
+        
+        // Initialize
+        window.addEventListener('load', () => {
+            checkOnlineStatus();
+            
+            // Check if already logged in
+            const savedStaff = localStorage.getItem('currentStaff');
+            const savedTrain = localStorage.getItem('currentTrain');
+            const savedManager = localStorage.getItem('isManager');
+            
+            if (savedStaff && savedTrain) {
+                staffId = savedStaff;
+                trainNumber = savedTrain;
+                isManager = savedManager === 'true';
+                showMainApp();
+                loadMenuAndInventory();
+            }
+        });
+        
+        // Online/Offline detection
+        window.addEventListener('online', () => {
+            isOnline = true;
+            document.getElementById('offlineBanner').classList.remove('show');
+            document.getElementById('syncStatus').innerHTML = '<i class="fas fa-check-circle mr-1"></i>Synced';
+            document.getElementById('syncStatus').className = 'flex items-center text-xs text-green-600 bg-green-50 px-2 py-1 rounded-lg';
+            syncPendingSales();
+        });
+        
+        window.addEventListener('offline', () => {
+            isOnline = false;
+            document.getElementById('offlineBanner').classList.add('show');
+            document.getElementById('syncStatus').innerHTML = '<i class="fas fa-wifi-slash mr-1"></i>Offline';
+            document.getElementById('syncStatus').className = 'flex items-center text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-lg';
+        });
+        
+        function checkOnlineStatus() {
+            if (!navigator.onLine) {
+                document.getElementById('offlineBanner').classList.add('show');
+            }
+        }
+        
+        // Login Function
+        function login() {
+            const sid = document.getElementById('staffId').value.trim().toUpperCase();
+            const tid = document.getElementById('trainNumber').value.trim();
+            const pwd = document.getElementById('staffPassword').value.trim();
+            
+            if (!sid || !tid || !pwd) {
+                alert('Please enter Staff ID, Train Number, and Password');
+                return;
+            }
+            
+            if (pwd === 'admin') {
+                isManager = true;
+            } else if (pwd !== '1234') {
+                alert('Invalid password. Use "1234" for staff or "admin" for manager.');
+                return;
+            }
+            
+            staffId = sid;
+            trainNumber = tid;
+            
+            localStorage.setItem('currentStaff', staffId);
+            localStorage.setItem('currentTrain', trainNumber);
+            localStorage.setItem('isManager', isManager);
+            
+            showMainApp();
+            loadMenuAndInventory();
+        }
+        
+        function showMainApp() {
+            document.getElementById('loginOverlay').classList.add('hidden');
+            document.getElementById('mainApp').classList.remove('hidden');
+            document.getElementById('displayStaff').textContent = 'Staff: ' + staffId;
+            document.getElementById('displayTrain').textContent = 'Train ' + trainNumber;
+            
+            if (isManager) {
+                document.getElementById('managerBadge').classList.remove('hidden');
+                document.getElementById('manageBtn').classList.remove('hidden');
+                document.getElementById('stockBtn').classList.remove('hidden');
+                document.getElementById('addItemBtn').classList.remove('hidden');
+            }
+            
+            updateTodayStats();
+            updatePendingBadge();
+        }
+        
+        function logout() {
+            if (confirm('Are you sure you want to logout?')) {
+                localStorage.removeItem('currentStaff');
+                localStorage.removeItem('currentTrain');
+                localStorage.removeItem('isManager');
+                location.reload();
+            }
+        }
+        
+        // Load Menu and Inventory together
+        function loadMenuAndInventory() {
+            // Load menu items
+            db.collection('menuItems').orderBy('name').onSnapshot((snapshot) => {
+                menuItems = [];
+                snapshot.forEach((doc) => {
+                    menuItems.push({ id: doc.id, ...doc.data() });
+                });
+                
+                if (menuItems.length === 0 && isManager) {
+                    initializeDefaultMenu();
+                } else if (menuItems.length === 0) {
+                    menuItems = defaultMenu;
+                }
+                
+                // Now load inventory
+                loadInventory();
+            });
+        }
+        
+        function loadInventory() {
+            db.collection('inventory')
+                .where('trainNumber', '==', trainNumber)
+                .onSnapshot((snapshot) => {
+                    inventoryData = {};
+                    let lowStockCount = 0;
+                    
+                    snapshot.forEach((doc) => {
+                        const data = doc.data();
+                        inventoryData[data.itemId] = { ...data, docId: doc.id };
+                        
+                        if (data.currentStock <= data.minStockLevel) {
+                            lowStockCount++;
+                        }
+                    });
+                    
+                    // Update low stock count in header
+                    document.getElementById('lowStockCount').textContent = lowStockCount;
+                    
+                    // Show/hide low stock alert
+                    const alertDiv = document.getElementById('lowStockAlert');
+                    const alertMessage = document.getElementById('lowStockMessage');
+                    
+                    if (lowStockCount > 0) {
+                        alertDiv.classList.add('show');
+                        alertMessage.textContent = `${lowStockCount} item(s) running low on stock`;
+                        document.getElementById('stockStatus').textContent = 'Low Stock!';
+                        document.getElementById('stockStatus').className = 'text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full';
+                    } else {
+                        alertDiv.classList.remove('show');
+                        document.getElementById('stockStatus').textContent = 'Stock OK';
+                        document.getElementById('stockStatus').className = 'text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full';
+                    }
+                    
+                    renderMenu();
+                });
+        }
+        
+        // Initialize default menu with inventory
+        function initializeDefaultMenu() {
+            if (!isOnline) {
+                alert('You need to be online to initialize the menu.');
+                return;
+            }
+            
+            defaultMenu.forEach(item => {
+                // Add to menu
+                db.collection('menuItems').doc(item.id).set(item);
+                
+                // Add to inventory for this train
+                db.collection('inventory').add({
+                    trainNumber: trainNumber,
+                    itemId: item.id,
+                    itemName: item.name,
+                    currentStock: 50,
+                    minStockLevel: 10,
+                    lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            });
+        }
+        
+        // Render Menu Grid with stock indicators
+        function renderMenu() {
+            const grid = document.getElementById('menuGrid');
+            
+            if (menuItems.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-2 text-center py-8 text-slate-400">
+                        <p>No items available. Ask manager to add items.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            grid.innerHTML = menuItems.map(item => {
+                const stock = inventoryData[item.id];
+                let stockBadge = '';
+                let cardClass = 'item-card bg-white rounded-xl p-3 shadow-sm cursor-pointer';
+                let stockText = '';
+                
+                if (stock) {
+                    if (stock.currentStock <= 0) {
+                        cardClass += ' out-of-stock';
+                        stockBadge = '<span class="stock-badge bg-gray-500">OUT</span>';
+                        stockText = '<p class="text-xs text-red-600 mt-1 font-bold">Out of Stock</p>';
+                    } else if (stock.currentStock <= stock.minStockLevel) {
+                        cardClass += ' low-stock';
+                        stockBadge = `<span class="stock-badge">${stock.currentStock}</span>`;
+                        stockText = `<p class="text-xs text-amber-600 mt-1 font-bold">Low: ${stock.currentStock} left</p>`;
+                    } else {
+                        stockBadge = `<span class="stock-badge ok">${stock.currentStock}</span>`;
+                        stockText = `<p class="text-xs text-green-600 mt-1">${stock.currentStock} in stock</p>`;
+                    }
+                } else {
+                    stockText = '<p class="text-xs text-slate-400 mt-1">Stock not set</p>';
+                }
+                
+                const clickAction = manageMode ? `openEditModal('${item.id}')` : 
+                                   stockMode ? `openUpdateStock('${item.id}')` : 
+                                   `addToOrder('${item.id}')`;
+                
+                const modeIndicator = manageMode ? '<p class="text-xs text-purple-600 mt-1"><i class="fas fa-edit mr-1"></i>Tap to edit</p>' :
+                                    stockMode ? '<p class="text-xs text-amber-600 mt-1"><i class="fas fa-box mr-1"></i>Tap for stock</p>' : '';
+                
+                return `
+                    <div class="${cardClass}" onclick="${clickAction}">
+                        ${stockBadge}
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="w-10 h-10 bg-${item.color}-100 rounded-lg flex items-center justify-center">
+                                <i class="fas ${item.icon} text-${item.color}-600"></i>
+                            </div>
+                            <span class="text-lg font-bold text-slate-800">₹${item.price}</span>
+                        </div>
+                        <p class="font-medium text-slate-800 text-sm">${item.name}</p>
+                        <p class="text-xs text-slate-400 mt-1">MRP: ₹${item.mrp || item.price}</p>
+                        ${stockText}
+                        ${modeIndicator}
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        // Stock Manager Functions
+        function showStockManager() {
+            if (!isManager) return;
+            stockMode = !stockMode;
+            manageMode = false;
+            
+            const banner = document.getElementById('stockBanner');
+            const manageBanner = document.getElementById('manageBanner');
+            const btn = document.getElementById('stockBtn');
+            const manageBtn = document.getElementById('manageBtn');
+            
+            if (stockMode) {
+                banner.classList.remove('hidden');
+                manageBanner.classList.add('hidden');
+                btn.innerHTML = '<i class="fas fa-times text-lg"></i>';
+                btn.classList.add('text-red-600');
+                manageBtn.innerHTML = '<i class="fas fa-cog text-lg"></i>';
+                manageBtn.classList.remove('text-red-600');
+            } else {
+                banner.classList.add('hidden');
+                btn.innerHTML = '<i class="fas fa-boxes text-lg"></i>';
+                btn.classList.remove('text-red-600');
+            }
+            
+            renderMenu();
+        }
+        
+        function openUpdateStock(itemId) {
+            const item = menuItems.find(i => i.id === itemId);
+            const stock = inventoryData[itemId];
+            
+            document.getElementById('updateStockItemId').value = itemId;
+            document.getElementById('updateStockItemName').textContent = item.name;
+            document.getElementById('addStockQty').value = '';
+            document.getElementById('minStockLevel').value = stock ? stock.minStockLevel : 10;
+            
+            document.getElementById('updateStockModal').classList.remove('hidden');
+        }
+        
+        function closeUpdateStockModal() {
+            document.getElementById('updateStockModal').classList.add('hidden');
+        }
+        
+        function saveStockUpdate() {
+            const itemId = document.getElementById('updateStockItemId').value;
+            const addQty = parseInt(document.getElementById('addStockQty').value) || 0;
+            const minLevel = parseInt(document.getElementById('minStockLevel').value) || 10;
+            
+            const stock = inventoryData[itemId];
+            
+            if (stock) {
+                // Update existing inventory
+                const newStock = stock.currentStock + addQty;
+                db.collection('inventory').doc(stock.docId).update({
+                    currentStock: newStock,
+                    minStockLevel: minLevel,
+                    lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                }).then(() => {
+                    closeUpdateStockModal();
+                    alert(`Stock updated! New quantity: ${newStock}`);
+                });
+            } else {
+                // Create new inventory entry
+                const item = menuItems.find(i => i.id === itemId);
+                db.collection('inventory').add({
+                    trainNumber: trainNumber,
+                    itemId: itemId,
+                    itemName: item.name,
+                    currentStock: addQty,
+                    minStockLevel: minLevel,
+                    lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                }).then(() => {
+                    closeUpdateStockModal();
+                    alert(`Stock added! Quantity: ${addQty}`);
+                });
+            }
+        }
+        
+        // Toggle Manage Mode (Manager only)
+        function toggleManageMode() {
+            if (!isManager) return;
+            
+            manageMode = !manageMode;
+            stockMode = false;
+            
+            const banner = document.getElementById('manageBanner');
+            const stockBanner = document.getElementById('stockBanner');
+            const btn = document.getElementById('manageBtn');
+            const stockBtn = document.getElementById('stockBtn');
+            
+            if (manageMode) {
+                banner.classList.remove('hidden');
+                stockBanner.classList.add('hidden');
+                btn.innerHTML = '<i class="fas fa-times text-lg"></i>';
+                btn.classList.add('text-red-600');
+                stockBtn.innerHTML = '<i class="fas fa-boxes text-lg"></i>';
+                stockBtn.classList.remove('text-red-600');
+            } else {
+                banner.classList.add('hidden');
+                btn.innerHTML = '<i class="fas fa-cog text-lg"></i>';
+                btn.classList.remove('text-red-600');
+            }
+            
+            renderMenu();
+        }
+        
+        // Edit Item Modal
+        function openEditModal(itemId) {
+            if (!isManager) return;
+            
+            const item = menuItems.find(i => i.id === itemId);
+            if (!item) return;
+            
+            document.getElementById('editItemId').value = itemId;
+            document.getElementById('editItemName').value = item.name;
+            document.getElementById('editItemPrice').value = item.price;
+            document.getElementById('editItemModal').classList.remove('hidden');
+        }
+        
+        function closeEditModal() {
+            document.getElementById('editItemModal').classList.add('hidden');
+        }
+        
+        function updateItem() {
+            const id = document.getElementById('editItemId').value;
+            const name = document.getElementById('editItemName').value.trim();
+            const price = parseInt(document.getElementById('editItemPrice').value);
+            
+            if (!name || !price) {
+                alert('Please enter name and price');
+                return;
+            }
+            
+            db.collection('menuItems').doc(id).update({
+                name: name,
+                price: price,
+                mrp: price
+            }).then(() => {
+                closeEditModal();
+                alert('Item updated successfully!');
+            }).catch((error) => {
+                alert('Error updating item: ' + error.message);
+            });
+        }
+        
+        function deleteItem() {
+            if (!confirm('Are you sure you want to delete this item?')) return;
+            
+            const id = document.getElementById('editItemId').value;
+            
+            db.collection('menuItems').doc(id).delete().then(() => {
+                closeEditModal();
+                alert('Item deleted!');
+            }).catch((error) => {
+                alert('Error deleting item: ' + error.message);
+            });
+        }
+        
+        // Add New Item Modal
+        function showAddItemModal() {
+            if (!isManager) {
+                alert('Only managers can add new items');
+                return;
+            }
+            document.getElementById('addItemModal').classList.remove('hidden');
+        }
+        
+        function closeAddModal() {
+            document.getElementById('addItemModal').classList.add('hidden');
+            document.getElementById('newItemName').value = '';
+            document.getElementById('newItemPrice').value = '';
+            document.getElementById('newItemStock').value = '';
+            document.getElementById('newItemMinStock').value = '10';
+        }
+        
+        function addNewItem() {
+            const name = document.getElementById('newItemName').value.trim();
+            const price = parseInt(document.getElementById('newItemPrice').value);
+            const stock = parseInt(document.getElementById('newItemStock').value) || 0;
+            const minStock = parseInt(document.getElementById('newItemMinStock').value) || 10;
+            const icon = document.getElementById('newItemIcon').value;
+            
+            if (!name || !price) {
+                alert('Please enter name and price');
+                return;
+            }
+            
+            const id = 'item-' + Date.now();
+            const colors = {
+                'fa-utensils': 'green', 'fa-glass-water': 'blue', 'fa-mug-hot': 'amber',
+                'fa-bowl-rice': 'yellow', 'fa-bread-slice': 'orange', 'fa-cookie': 'yellow',
+                'fa-ice-cream': 'pink', 'fa-drumstick-bite': 'red', 'fa-egg': 'orange',
+                'fa-bottle-water': 'blue'
+            };
+            
+            const newItem = {
+                id: id, name: name, price: price, mrp: price,
+                icon: icon, color: colors[icon] || 'blue'
+            };
+            
+            // Add to menu
+            db.collection('menuItems').doc(id).set(newItem).then(() => {
+                // Add to inventory
+                return db.collection('inventory').add({
+                    trainNumber: trainNumber,
+                    itemId: id,
+                    itemName: name,
+                    currentStock: stock,
+                    minStockLevel: minStock,
+                    lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            }).then(() => {
+                closeAddModal();
+                alert('New item added successfully with stock!');
+            }).catch((error) => {
+                alert('Error adding item: ' + error.message);
+            });
+        }
+        
+        // Add to Order with stock check
+        function addToOrder(itemId) {
+            if (manageMode || stockMode) return;
+            
+            const item = menuItems.find(i => i.id === itemId);
+            const stock = inventoryData[itemId];
+            
+            // Check stock availability
+            if (stock && stock.currentStock <= 0) {
+                alert('Sorry, this item is out of stock!');
+                return;
+            }
+            
+            const existing = currentOrder.find(i => i.id === itemId);
+            
+            if (existing) {
+                // Check if we have enough stock
+                if (stock && existing.qty >= stock.currentStock) {
+                    alert(`Only ${stock.currentStock} items available in stock!`);
+                    return;
+                }
+                existing.qty++;
+                existing.total = existing.qty * existing.price;
+            } else {
+                currentOrder.push({ ...item, qty: 1, total: item.price });
+            }
+            
+            updateOrderDisplay();
+            
+            // Visual feedback
+            const cards = document.querySelectorAll('.item-card');
+            cards.forEach(card => {
+                if (card.innerHTML.includes(item.name)) {
+                    card.classList.add('selected');
+                    setTimeout(() => card.classList.remove('selected'), 200);
+                }
+            });
+        }
+        
+        // Update Order Display
+        function updateOrderDisplay() {
+            const list = document.getElementById('orderList');
+            const totalEl = document.getElementById('orderTotal');
+            const countEl = document.getElementById('itemCount');
+            
+            if (currentOrder.length === 0) {
+                list.innerHTML = '<p class="text-slate-400 text-center py-2 text-sm">No items selected</p>';
+                totalEl.textContent = '₹0';
+                countEl.textContent = '0';
+                return;
+            }
+            
+            const total = currentOrder.reduce((sum, item) => sum + item.total, 0);
+            const itemCount = currentOrder.reduce((sum, item) => sum + item.qty, 0);
+            
+            list.innerHTML = currentOrder.map((item, index) => `
+                <div class="flex items-center justify-between py-2 border-b border-slate-100">
+                    <div class="flex-1">
+                        <p class="font-medium text-slate-800 text-sm">${item.name}</p>
+                        <p class="text-xs text-slate-500">₹${item.price} x ${item.qty}</p>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <span class="font-bold text-slate-800">₹${item.total}</span>
+                        <div class="flex items-center space-x-1 ml-2">
+                            <button onclick="changeQty(${index}, -1)" class="qty-btn bg-slate-200 text-slate-600 hover:bg-slate-300">-</button>
+                            <span class="w-6 text-center font-medium">${item.qty}</span>
+                            <button onclick="changeQty(${index}, 1)" class="qty-btn bg-blue-500 text-white hover:bg-blue-600">+</button>
+                        </div>
+                        <button onclick="removeItem(${index})" class="ml-2 text-red-400 hover:text-red-600">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+            
+            totalEl.textContent = '₹' + total.toLocaleString('en-IN');
+            countEl.textContent = itemCount;
+        }
+        
+        function changeQty(index, delta) {
+            const item = currentOrder[index];
+            const stock = inventoryData[item.id];
+            
+            if (delta > 0 && stock && item.qty >= stock.currentStock) {
+                alert(`Only ${stock.currentStock} items available!`);
+                return;
+            }
+            
+            item.qty += delta;
+            
+            if (item.qty <= 0) {
+                currentOrder.splice(index, 1);
+            } else {
+                item.total = item.qty * item.price;
+            }
+            
+            updateOrderDisplay();
+        }
+        
+        function removeItem(index) {
+            currentOrder.splice(index, 1);
+            updateOrderDisplay();
+        }
+        
+        function clearOrder() {
+            if (currentOrder.length === 0) return;
+            if (confirm('Clear all items?')) {
+                currentOrder = [];
+                document.getElementById('customerPhone').value = '';
+                updateOrderDisplay();
+            }
+        }
+        
+        // Generate Bill & Update Inventory
+        function generateBill() {
+            const phone = document.getElementById('customerPhone').value.trim();
+            
+            if (currentOrder.length === 0) {
+                alert('Please add items to the order');
+                return;
+            }
+            
+            if (!phone || phone.length !== 10 || !/^\d{10}$/.test(phone)) {
+                alert('Please enter valid 10-digit mobile number');
+                document.getElementById('customerPhone').focus();
+                return;
+            }
+            
+            const total = currentOrder.reduce((sum, item) => sum + item.total, 0);
+            const transactionId = 'TXN' + Date.now().toString().slice(-8);
+            
+            const saleData = {
+                transactionId: transactionId,
+                staffId: staffId,
+                trainNumber: trainNumber,
+                items: [...currentOrder],
+                total: total,
+                customerPhone: phone,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                synced: true,
+                deviceTime: new Date().toISOString()
+            };
+            
+            // Save sale and update inventory
+            db.collection('sales').add(saleData)
+                .then(() => {
+                    // Deduct sold items from inventory
+                    const batch = db.batch();
+                    
+                    currentOrder.forEach(item => {
+                        const stock = inventoryData[item.id];
+                        if (stock) {
+                            const newStock = Math.max(0, stock.currentStock - item.qty);
+                            const ref = db.collection('inventory').doc(stock.docId);
+                            batch.update(ref, {
+                                currentStock: newStock,
+                                lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                        }
+                    });
+                    
+                    return batch.commit();
+                })
+                .then(() => {
+                    // Show success modal
+                    document.getElementById('transactionId').textContent = '#' + transactionId;
+                    document.getElementById('modalAmount').textContent = '₹' + total.toLocaleString('en-IN');
+                    document.getElementById('billModal').classList.remove('hidden');
+                    
+                    updateTodayStats();
+                })
+                .catch((error) => {
+                    console.error('Error:', error);
+                    saveOffline();
+                });
+        }
+        
+        function closeBillModal() {
+            document.getElementById('billModal').classList.add('hidden');
+            currentOrder = [];
+            document.getElementById('customerPhone').value = '';
+            updateOrderDisplay();
+        }
+        
+        // Save Offline
+        function saveOffline() {
+            if (currentOrder.length === 0) {
+                alert('Please add items first');
+                return;
+            }
+            
+            const total = currentOrder.reduce((sum, item) => sum + item.total, 0);
+            const transactionId = 'TXN' + Date.now().toString().slice(-8);
+            
+            const saleData = {
+                transactionId: transactionId,
+                staffId: staffId,
+                trainNumber: trainNumber,
+                items: [...currentOrder],
+                total: total,
+                customerPhone: document.getElementById('customerPhone').value || 'N/A',
+                timestamp: null,
+                synced: false,
+                deviceTime: new Date().toISOString()
+            };
+            
+            let pending = JSON.parse(localStorage.getItem('pendingSales') || '[]');
+            pending.push(saleData);
+            localStorage.setItem('pendingSales', JSON.stringify(pending));
+            
+            alert('Sale saved offline. Will sync when online.');
+            currentOrder = [];
+            document.getElementById('customerPhone').value = '';
+            updateOrderDisplay();
+            updateTodayStats();
+            updatePendingBadge();
+        }
+        
+        // Sync Functions
+        function syncPendingSales() {
+            const pending = JSON.parse(localStorage.getItem('pendingSales') || '[]');
+            if (pending.length === 0) return;
+            
+            let completed = 0;
+            pending.forEach((sale, index) => {
+                const saleData = {
+                    ...sale,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                    synced: true
+                };
+                
+                db.collection('sales').add(saleData)
+                    .then(() => {
+                        completed++;
+                        if (completed === pending.length) {
+                            localStorage.setItem('pendingSales', '[]');
+                            updatePendingBadge();
+                            updateTodayStats();
+                        }
+                    });
+            });
+        }
+        
+        // Update Today's Stats
+        function updateTodayStats() {
+            if (!staffId) return;
+            
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            
+            db.collection('sales')
+                .where('staffId', '==', staffId)
+                .where('timestamp', '>=', today)
+                .get()
+                .then((snapshot) => {
+                    let total = 0;
+                    let count = 0;
+                    
+                    snapshot.forEach((doc) => {
+                        const sale = doc.data();
+                        total += sale.total || 0;
+                        count++;
+                    });
+                    
+                    document.getElementById('todaySales').textContent = '₹' + total.toLocaleString('en-IN');
+                    document.getElementById('todayCount').textContent = count;
+                });
+        }
+        
+        // Update Pending Badge
+        function updatePendingBadge() {
+            const pending = JSON.parse(localStorage.getItem('pendingSales') || '[]');
+            const badge = document.getElementById('pendingBadge');
+            
+            if (pending.length > 0) {
+                badge.textContent = pending.length;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+        
+        // View Pending Sales
+        function viewPending() {
+            const pending = JSON.parse(localStorage.getItem('pendingSales') || '[]');
+            document.getElementById('pendingCountModal').textContent = pending.length;
+            
+            const list = document.getElementById('pendingList');
+            if (pending.length === 0) {
+                list.innerHTML = '<p class="text-center text-slate-400 py-4">No pending sales</p>';
+            } else {
+                list.innerHTML = pending.map((sale, idx) => `
+                    <div class="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                        <div class="flex justify-between items-start mb-2">
+                            <div>
+                                <p class="font-bold text-slate-800 text-sm">${sale.transactionId}</p>
+                                <p class="text-xs text-slate-500">${new Date(sale.deviceTime).toLocaleString()}</p>
+                            </div>
+                            <span class="font-bold text-slate-800">₹${sale.total}</span>
+                        </div>
+                        <p class="text-xs text-slate-600 mb-2">${sale.items.length} items • ${sale.customerPhone}</p>
+                        <button onclick="syncOne(${idx})" class="w-full py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+                            <i class="fas fa-sync mr-1"></i>Sync Now
+                        </button>
+                    </div>
+                `).join('');
+            }
+            
+            document.getElementById('pendingModal').classList.remove('hidden');
+        }
+        
+        function closePendingModal() {
+            document.getElementById('pendingModal').classList.add('hidden');
+        }
+        
+        function syncAll() {
+            if (!isOnline) {
+                alert('You are offline. Please connect to internet to sync.');
+                return;
+            }
+            
+            const btn = document.getElementById('syncAllBtn');
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Syncing...';
+            btn.disabled = true;
+            
+            syncPendingSales();
+            
+            setTimeout(() => {
+                closePendingModal();
+                btn.innerHTML = '<i class="fas fa-sync mr-2"></i>Sync All Now';
+                btn.disabled = false;
+                alert('Sync completed!');
+            }, 2000);
+        }
+        
+        function syncOne(idx) {
+            if (!isOnline) {
+                alert('You are offline. Please connect to internet to sync.');
+                return;
+            }
+            
+            let pending = JSON.parse(localStorage.getItem('pendingSales') || '[]');
+            if (pending[idx]) {
+                let sale = pending[idx];
+                const saleData = {
+                    ...sale,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                    synced: true
+                };
+                
+                db.collection('sales').add(saleData)
+                    .then(() => {
+                        pending.splice(idx, 1);
+                        localStorage.setItem('pendingSales', JSON.stringify(pending));
+                        viewPending();
+                        updateTodayStats();
+                        updatePendingBadge();
+                        alert('Sale synced successfully!');
+                    });
+            }
+        }
+        
+        function refreshMenu() {
+            loadMenuAndInventory();
+        }
+        
+        function viewLowStock() {
+            showStockManager();
+        }
+    </script>
+</body>
+</html>
