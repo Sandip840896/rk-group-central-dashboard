@@ -1,0 +1,1723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RK Group - Central Command Dashboard v2.0</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        * { font-family: 'Inter', sans-serif; }
+        
+        .glass {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .login-overlay {
+            position: fixed;
+            inset: 0;
+            background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .metric-card {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            border: 1px solid #e2e8f0;
+            transition: all 0.3s ease;
+        }
+        
+        .metric-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+        
+        .status-live::before {
+            content: '';
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #10b981;
+            border-radius: 50%;
+            margin-right: 6px;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .tab-active {
+            border-bottom: 3px solid #3b82f6;
+            color: #3b82f6;
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 300px;
+        }
+        
+        .low-stock { background: #fef2f2; border-color: #ef4444; }
+        .medium-stock { background: #fffbeb; border-color: #f59e0b; }
+        .good-stock { background: #f0fdf4; border-color: #10b981; }
+        
+        .inventory-card {
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+        
+        .inventory-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+        
+        .progress-bar {
+            transition: width 0.5s ease;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal.show { display: flex; }
+    </style>
+</head>
+<body class="bg-slate-100">
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    
+    <script>
+        // Your Firebase Config
+        const firebaseConfig = {
+            apiKey: "AIzaSyDMcHok-Q-w6a0BwG2w1sFvSxQwgTXlnUg",
+            authDomain: "rk-group-feedback.firebaseapp.com",
+            projectId: "rk-group-feedback",
+            storageBucket: "rk-group-feedback.firebasestorage.app",
+            messagingSenderId: "89598658685",
+            appId: "1:89598658685:web:398d8a06db8bea367ec914"
+        };
+        
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+    </script>
+
+    <!-- Login Overlay -->
+    <div id="loginOverlay" class="login-overlay">
+        <div class="glass rounded-2xl p-8 w-full max-w-md mx-4 shadow-2xl">
+            <div class="text-center mb-8">
+                <div class="w-20 h-20 bg-gradient-to-br from-orange-500 to-red-600 rounded-2xl flex items-center justify-center text-white font-bold text-3xl mx-auto mb-4 shadow-lg">
+                    RK
+                </div>
+                <h2 class="text-2xl font-bold text-slate-800">Central Command v2.0</h2>
+                <p class="text-sm text-slate-500 mt-1">RK Group Management System</p>
+            </div>
+            
+            <!-- Login Form -->
+            <div id="loginForm" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Manager ID / Email</label>
+                    <input type="email" id="loginEmail" placeholder="manager@rkgroup.com" 
+                        class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Password</label>
+                    <input type="password" id="loginPassword" placeholder="Enter password" 
+                        class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                </div>
+                <button onclick="login()" class="w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-lg hover:bg-blue-700 transition shadow-lg">
+                    Sign In
+                </button>
+                <p id="loginError" class="text-red-500 text-sm text-center hidden"></p>
+                
+                <div class="pt-4 border-t border-slate-200">
+                    <p class="text-xs text-slate-500 text-center mb-3">First time? Create admin account</p>
+                    <button onclick="showCreateAccount()" class="w-full border-2 border-blue-600 text-blue-600 py-3 rounded-xl font-medium hover:bg-blue-50 transition">
+                        Create New Account
+                    </button>
+                </div>
+            </div>
+
+            <!-- Create Account Form -->
+            <div id="createAccountForm" class="space-y-4 hidden">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Full Name</label>
+                    <input type="text" id="newName" placeholder="Enter your name" 
+                        class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Email (Manager ID)</label>
+                    <input type="email" id="newEmail" placeholder="manager@rkgroup.com" 
+                        class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Password</label>
+                    <input type="password" id="newPassword" placeholder="Min 6 characters" 
+                        class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Role</label>
+                    <select id="newRole" class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none">
+                        <option value="admin">Super Admin</option>
+                        <option value="cluster_manager">Cluster Manager</option>
+                        <option value="yard_manager">Yard Manager</option>
+                        <option value="train_manager">Train Manager</option>
+                    </select>
+                </div>
+                <button onclick="createAccount()" class="w-full bg-green-600 text-white py-4 rounded-xl font-bold text-lg hover:bg-green-700 transition shadow-lg">
+                    Create Account
+                </button>
+                <button onclick="showLogin()" class="w-full text-slate-600 py-2 text-sm hover:text-blue-600">
+                    Back to Login
+                </button>
+                <p id="createError" class="text-red-500 text-sm text-center hidden"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Dashboard -->
+    <div id="mainDashboard" class="hidden">
+        <!-- Top Navigation -->
+        <nav class="bg-white shadow-lg sticky top-0 z-50">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between h-16">
+                    <div class="flex items-center">
+                        <div class="w-10 h-10 bg-gradient-to-br from-orange-500 to-red-600 rounded-lg flex items-center justify-center text-white font-bold mr-3">
+                            RK
+                        </div>
+                        <div>
+                            <h1 class="font-bold text-slate-800 text-lg">Central Command</h1>
+                            <p class="text-xs text-slate-500" id="userRoleDisplay">Admin Dashboard</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <span class="status-live text-sm font-medium text-green-600 flex items-center">
+                            Live Sync
+                        </span>
+                        <button onclick="showMasterData()" class="p-2 text-slate-600 hover:text-blue-600 transition" title="Master Data">
+                            <i class="fas fa-database text-xl"></i>
+                        </button>
+                        <div class="relative">
+                            <i class="fas fa-bell text-slate-600 text-xl cursor-pointer hover:text-blue-600 transition"></i>
+                            <span id="alertBadge" class="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center hidden">0</span>
+                        </div>
+                        <div class="flex items-center space-x-2 ml-4 pl-4 border-l border-slate-200">
+                            <div class="text-right">
+                                <p class="text-sm font-medium text-slate-800" id="userNameDisplay">Manager</p>
+                                <p class="text-xs text-slate-500" id="userEmailDisplay">manager@rkgroup.com</p>
+                            </div>
+                            <button onclick="logout()" class="text-slate-400 hover:text-red-500 transition">
+                                <i class="fas fa-sign-out-alt text-xl"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            
+            <!-- Key Metrics -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div class="metric-card rounded-xl p-6 border-l-4 border-green-500">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <p class="text-sm text-slate-500 mb-1">Today's Revenue</p>
+                            <p class="text-3xl font-bold text-slate-800" id="totalRevenue">₹0</p>
+                        </div>
+                        <div class="w-14 h-14 bg-green-100 rounded-xl flex items-center justify-center">
+                            <i class="fas fa-rupee-sign text-green-600 text-2xl"></i>
+                        </div>
+                    </div>
+                    <p class="text-xs text-green-600" id="revenueTrend">↑ 12% vs yesterday</p>
+                </div>
+
+                <div class="metric-card rounded-xl p-6 border-l-4 border-blue-500">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <p class="text-sm text-slate-500 mb-1">Total Transactions</p>
+                            <p class="text-3xl font-bold text-slate-800" id="totalTransactions">0</p>
+                        </div>
+                        <div class="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center">
+                            <i class="fas fa-receipt text-blue-600 text-2xl"></i>
+                        </div>
+                    </div>
+                    <p class="text-xs text-blue-600">Across all trains</p>
+                </div>
+
+                <div class="metric-card rounded-xl p-6 border-l-4 border-purple-500">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <p class="text-sm text-slate-500 mb-1">Active Trains</p>
+                            <p class="text-3xl font-bold text-slate-800" id="activeTrains">0</p>
+                        </div>
+                        <div class="w-14 h-14 bg-purple-100 rounded-xl flex items-center justify-center">
+                            <i class="fas fa-train text-purple-600 text-2xl"></i>
+                        </div>
+                    </div>
+                    <p class="text-xs text-purple-600" id="trainStatus">All operational</p>
+                </div>
+
+                <div class="metric-card rounded-xl p-6 border-l-4 border-red-500">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <p class="text-sm text-slate-500 mb-1">Pending Issues</p>
+                            <p class="text-3xl font-bold text-slate-800" id="pendingIssues">0</p>
+                        </div>
+                        <div class="w-14 h-14 bg-red-100 rounded-xl flex items-center justify-center">
+                            <i class="fas fa-exclamation-triangle text-red-600 text-2xl"></i>
+                        </div>
+                    </div>
+                    <p class="text-xs text-red-600">Need attention</p>
+                </div>
+            </div>
+
+            <!-- Inventory Alert Banner -->
+            <div id="inventoryAlertBanner" class="hidden mb-6 bg-gradient-to-r from-amber-500 to-orange-500 rounded-xl p-4 text-white shadow-lg">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center">
+                        <i class="fas fa-boxes text-2xl mr-4"></i>
+                        <div>
+                            <h3 class="font-bold text-lg">Low Stock Alert!</h3>
+                            <p class="text-sm opacity-90"><span id="lowStockItems">0</span> items running low across trains</p>
+                        </div>
+                    </div>
+                    <button onclick="switchTab('inventory')" class="bg-white text-orange-600 px-4 py-2 rounded-lg font-bold hover:bg-orange-50 transition">
+                        View Inventory
+                    </button>
+                </div>
+            </div>
+
+            <!-- Charts Row -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h3 class="text-lg font-bold text-slate-800 mb-4">Revenue Trend</h3>
+                    <div class="chart-container">
+                        <canvas id="revenueChart"></canvas>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h3 class="text-lg font-bold text-slate-800 mb-4">Feedback Categories</h3>
+                    <div class="chart-container">
+                        <canvas id="feedbackChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tabs Section -->
+            <div class="bg-white rounded-xl shadow-md overflow-hidden">
+                <div class="flex border-b border-slate-200 overflow-x-auto">
+                    <button onclick="switchTab('sales')" id="tab-sales" class="flex-1 py-4 px-6 text-sm font-medium tab-active whitespace-nowrap">
+                        <i class="fas fa-shopping-cart mr-2"></i>Sales Data
+                    </button>
+                    <button onclick="switchTab('feedback')" id="tab-feedback" class="flex-1 py-4 px-6 text-sm font-medium text-slate-600 hover:text-blue-600 whitespace-nowrap">
+                        <i class="fas fa-comments mr-2"></i>Customer Feedback
+                    </button>
+                    <button onclick="switchTab('staff')" id="tab-staff" class="flex-1 py-4 px-6 text-sm font-medium text-slate-600 hover:text-blue-600 whitespace-nowrap">
+                        <i class="fas fa-users mr-2"></i>Staff Performance
+                    </button>
+                    <button onclick="switchTab('inventory')" id="tab-inventory" class="flex-1 py-4 px-6 text-sm font-medium text-slate-600 hover:text-blue-600 whitespace-nowrap">
+                        <i class="fas fa-boxes mr-2"></i>Inventory <span id="inventoryBadge" class="hidden bg-red-500 text-white text-xs px-2 py-1 rounded-full ml-1">0</span>
+                    </button>
+                    <button onclick="switchTab('trains')" id="tab-trains" class="flex-1 py-4 px-6 text-sm font-medium text-slate-600 hover:text-blue-600 whitespace-nowrap">
+                        <i class="fas fa-train mr-2"></i>Train Status
+                    </button>
+                </div>
+
+                <div class="p-6">
+                    <!-- Sales Tab -->
+                    <div id="content-sales" class="tab-content">
+                        <div class="flex justify-between items-center mb-4">
+                            <h4 class="font-bold text-slate-800">Recent Transactions</h4>
+                            <div class="flex space-x-2">
+                                <select id="trainFilter" onchange="loadSalesData()" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                                    <option value="all">All Trains</option>
+                                </select>
+                                <button onclick="exportSales()" class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700">
+                                    <i class="fas fa-download mr-2"></i>Export
+                                </button>
+                            </div>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead class="bg-slate-50 text-slate-600">
+                                    <tr>
+                                        <th class="px-4 py-3 text-left">Time</th>
+                                        <th class="px-4 py-3 text-left">Train</th>
+                                        <th class="px-4 py-3 text-left">Staff</th>
+                                        <th class="px-4 py-3 text-left">Items</th>
+                                        <th class="px-4 py-3 text-right">Amount</th>
+                                        <th class="px-4 py-3 text-center">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="salesTableBody" class="divide-y divide-slate-200">
+                                    <tr>
+                                        <td colspan="6" class="px-4 py-8 text-center text-slate-400">
+                                            <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                                            <p>Loading sales data...</p>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Feedback Tab -->
+                    <div id="content-feedback" class="tab-content hidden">
+                        <div class="flex justify-between items-center mb-4">
+                            <h4 class="font-bold text-slate-800">Recent Feedback & Complaints</h4>
+                            <select id="feedbackFilter" onchange="loadFeedbackData()" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                                <option value="all">All Feedback</option>
+                                <option value="complaint">Complaints Only</option>
+                                <option value="positive">Positive Only</option>
+                            </select>
+                        </div>
+                        <div id="feedbackList" class="space-y-4 max-h-96 overflow-y-auto">
+                            <p class="text-center text-slate-400 py-8">Loading feedback...</p>
+                        </div>
+                    </div>
+
+                    <!-- Staff Tab -->
+                    <div id="content-staff" class="tab-content hidden">
+                        <div class="flex justify-between items-center mb-4">
+                            <h4 class="font-bold text-slate-800">Staff Performance Leaderboard</h4>
+                            <button onclick="exportStaffReport()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">
+                                <i class="fas fa-download mr-2"></i>Export Report
+                            </button>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead class="bg-slate-50 text-slate-600">
+                                    <tr>
+                                        <th class="px-4 py-3 text-left">Rank</th>
+                                        <th class="px-4 py-3 text-left">Staff ID</th>
+                                        <th class="px-4 py-3 text-left">Train</th>
+                                        <th class="px-4 py-3 text-right">Sales (₹)</th>
+                                        <th class="px-4 py-3 text-right">Transactions</th>
+                                        <th class="px-4 py-3 text-center">Performance</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="staffTableBody" class="divide-y divide-slate-200">
+                                    <tr>
+                                        <td colspan="6" class="px-4 py-8 text-center text-slate-400">Loading staff data...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- INVENTORY TAB - NEW FEATURE -->
+                    <div id="content-inventory" class="tab-content hidden">
+                        <div class="flex justify-between items-center mb-6">
+                            <div>
+                                <h4 class="font-bold text-slate-800 text-lg">Inventory Management</h4>
+                                <p class="text-sm text-slate-500">Real-time stock levels across all trains</p>
+                            </div>
+                            <div class="flex space-x-2">
+                                <select id="inventoryTrainFilter" onchange="loadInventoryData()" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                                    <option value="all">All Trains</option>
+                                </select>
+                                <button onclick="showAddStockModal()" class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700">
+                                    <i class="fas fa-plus mr-2"></i>Add Stock
+                                </button>
+                                <button onclick="exportInventory()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">
+                                    <i class="fas fa-download mr-2"></i>Export
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Inventory Summary Cards -->
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                            <div class="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                                <p class="text-xs text-slate-500 mb-1">Total Items</p>
+                                <p class="text-2xl font-bold text-slate-800" id="totalInventoryItems">0</p>
+                            </div>
+                            <div class="bg-red-50 rounded-xl p-4 border border-red-200">
+                                <p class="text-xs text-red-600 mb-1">Critical Stock</p>
+                                <p class="text-2xl font-bold text-red-600" id="criticalStockCount">0</p>
+                            </div>
+                            <div class="bg-amber-50 rounded-xl p-4 border border-amber-200">
+                                <p class="text-xs text-amber-600 mb-1">Low Stock</p>
+                                <p class="text-2xl font-bold text-amber-600" id="lowStockCount">0</p>
+                            </div>
+                            <div class="bg-green-50 rounded-xl p-4 border border-green-200">
+                                <p class="text-xs text-green-600 mb-1">Healthy Stock</p>
+                                <p class="text-2xl font-bold text-green-600" id="healthyStockCount">0</p>
+                            </div>
+                        </div>
+
+                        <!-- Inventory Table -->
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead class="bg-slate-50 text-slate-600">
+                                    <tr>
+                                        <th class="px-4 py-3 text-left">Item</th>
+                                        <th class="px-4 py-3 text-left">Train</th>
+                                        <th class="px-4 py-3 text-right">Current Stock</th>
+                                        <th class="px-4 py-3 text-right">Min. Level</th>
+                                        <th class="px-4 py-3 text-center">Status</th>
+                                        <th class="px-4 py-3 text-center">Last Updated</th>
+                                        <th class="px-4 py-3 text-center">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="inventoryTableBody" class="divide-y divide-slate-200">
+                                    <tr>
+                                        <td colspan="7" class="px-4 py-8 text-center text-slate-400">
+                                            <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                                            <p>Loading inventory...</p>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Inventory Movement Log -->
+                        <div class="mt-8">
+                            <h5 class="font-bold text-slate-800 mb-4">Recent Stock Movements</h5>
+                            <div id="inventoryLog" class="space-y-2 max-h-64 overflow-y-auto">
+                                <p class="text-center text-slate-400 py-4">Loading movement log...</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Trains Tab -->
+                    <div id="content-trains" class="tab-content hidden">
+                        <div class="flex justify-between items-center mb-4">
+                            <h4 class="font-bold text-slate-800">Train Operations Status</h4>
+                            <button onclick="showAddTrainModal()" class="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-purple-700">
+                                <i class="fas fa-plus mr-2"></i>Add Train
+                            </button>
+                        </div>
+                        <div id="trainsList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <p class="text-center text-slate-400 py-8 col-span-3">Loading train data...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Stock Modal -->
+    <div id="addStockModal" class="modal">
+        <div class="bg-white rounded-2xl max-w-md w-full mx-4 p-6">
+            <h3 class="text-xl font-bold text-slate-800 mb-4">Add/Update Stock</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Select Train</label>
+                    <select id="stockTrainSelect" class="w-full border border-slate-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                        <option value="">Select Train...</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Select Item</label>
+                    <select id="stockItemSelect" class="w-full border border-slate-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                        <option value="">Select Item...</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Quantity to Add</label>
+                    <input type="number" id="stockQtyInput" placeholder="Enter quantity" 
+                        class="w-full border border-slate-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Minimum Alert Level</label>
+                    <input type="number" id="stockMinLevelInput" placeholder="Alert when below this quantity" 
+                        class="w-full border border-slate-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <div class="flex space-x-3 pt-4">
+                    <button onclick="closeAddStockModal()" class="flex-1 py-3 border border-slate-300 rounded-xl text-slate-700 font-medium hover:bg-slate-50">Cancel</button>
+                    <button onclick="saveStockAddition()" class="flex-1 py-3 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700">Update Stock</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Master Data Modal -->
+    <div id="masterDataModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+            <div class="p-6 border-b border-slate-200 flex justify-between items-center">
+                <h3 class="text-xl font-bold text-slate-800">Master Data Management</h3>
+                <button onclick="closeMasterData()" class="text-slate-400 hover:text-slate-600">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto max-h-[70vh]">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Add Train -->
+                    <div class="bg-slate-50 rounded-xl p-6">
+                        <h4 class="font-bold text-slate-800 mb-4 flex items-center">
+                            <i class="fas fa-train text-blue-600 mr-2"></i>Add New Train
+                        </h4>
+                        <div class="space-y-3">
+                            <input type="text" id="trainNumber" placeholder="Train Number (e.g., 12649)" class="w-full border border-slate-300 rounded-lg px-4 py-2">
+                            <input type="text" id="trainName" placeholder="Train Name (e.g., YPR Express)" class="w-full border border-slate-300 rounded-lg px-4 py-2">
+                            <input type="text" id="trainRoute" placeholder="Route (e.g., NZM → YPR)" class="w-full border border-slate-300 rounded-lg px-4 py-2">
+                            <select id="trainManager" class="w-full border border-slate-300 rounded-lg px-4 py-2">
+                                <option value="">Select Train Manager</option>
+                            </select>
+                            <select id="yardManager" class="w-full border border-slate-300 rounded-lg px-4 py-2">
+                                <option value="">Select Yard Manager</option>
+                            </select>
+                            <select id="clusterManager" class="w-full border border-slate-300 rounded-lg px-4 py-2">
+                                <option value="">Select Cluster Manager</option>
+                            </select>
+                            <button onclick="addTrain()" class="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700">
+                                Add Train
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Add Manager -->
+                    <div class="bg-slate-50 rounded-xl p-6">
+                        <h4 class="font-bold text-slate-800 mb-4 flex items-center">
+                            <i class="fas fa-user-plus text-green-600 mr-2"></i>Add Manager
+                        </h4>
+                        <div class="space-y-3">
+                            <input type="text" id="managerName" placeholder="Full Name" class="w-full border border-slate-300 rounded-lg px-4 py-2">
+                            <input type="email" id="managerEmail" placeholder="Email" class="w-full border border-slate-300 rounded-lg px-4 py-2">
+                            <input type="tel" id="managerPhone" placeholder="Phone Number" class="w-full border border-slate-300 rounded-lg px-4 py-2">
+                            <select id="managerRole" class="w-full border border-slate-300 rounded-lg px-4 py-2">
+                                <option value="train_manager">Train Manager</option>
+                                <option value="yard_manager">Yard Manager</option>
+                                <option value="cluster_manager">Cluster Manager</option>
+                            </select>
+                            <select id="assignTrain" class="w-full border border-slate-300 rounded-lg px-4 py-2">
+                                <option value="">Assign to Train (Optional)</option>
+                            </select>
+                            <button onclick="addManager()" class="w-full bg-green-600 text-white py-3 rounded-lg font-medium hover:bg-green-700">
+                                Add Manager
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Existing Trains List -->
+                <div class="mt-6">
+                    <h4 class="font-bold text-slate-800 mb-4">Existing Trains</h4>
+                    <div id="masterTrainsList" class="space-y-2">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global Variables
+        let currentUser = null;
+        let revenueChart = null;
+        let feedbackChart = null;
+        let allSales = [];
+        let allFeedback = [];
+        let allTrains = [];
+        let allManagers = [];
+        let allInventory = [];
+        let menuItems = [];
+
+        // Check if user is already logged in
+        auth.onAuthStateChanged((user) => {
+            if (user) {
+                currentUser = user;
+                loadUserData(user.uid);
+                showDashboard();
+            } else {
+                showLoginOverlay();
+            }
+        });
+
+        function showLoginOverlay() {
+            document.getElementById('loginOverlay').classList.remove('hidden');
+            document.getElementById('mainDashboard').classList.add('hidden');
+        }
+
+        function showDashboard() {
+            document.getElementById('loginOverlay').classList.add('hidden');
+            document.getElementById('mainDashboard').classList.remove('hidden');
+            initializeDashboard();
+        }
+
+        function showCreateAccount() {
+            document.getElementById('loginForm').classList.add('hidden');
+            document.getElementById('createAccountForm').classList.remove('hidden');
+        }
+
+        function showLogin() {
+            document.getElementById('createAccountForm').classList.add('hidden');
+            document.getElementById('loginForm').classList.remove('hidden');
+        }
+
+        // Login Function
+        function login() {
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            
+            if (!email || !password) {
+                showLoginError('Please enter email and password');
+                return;
+            }
+
+            auth.signInWithEmailAndPassword(email, password)
+                .catch((error) => {
+                    showLoginError(error.message);
+                });
+        }
+
+        function showLoginError(message) {
+            const errorEl = document.getElementById('loginError');
+            errorEl.textContent = message;
+            errorEl.classList.remove('hidden');
+        }
+
+        // Create Account Function
+        function createAccount() {
+            const name = document.getElementById('newName').value;
+            const email = document.getElementById('newEmail').value;
+            const password = document.getElementById('newPassword').value;
+            const role = document.getElementById('newRole').value;
+
+            if (!name || !email || !password) {
+                showCreateError('Please fill all fields');
+                return;
+            }
+
+            if (password.length < 6) {
+                showCreateError('Password must be at least 6 characters');
+                return;
+            }
+
+            auth.createUserWithEmailAndPassword(email, password)
+                .then((userCredential) => {
+                    return db.collection('managers').doc(userCredential.user.uid).set({
+                        name: name,
+                        email: email,
+                        role: role,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        uid: userCredential.user.uid
+                    });
+                })
+                .then(() => {
+                    alert('Account created successfully! Please login.');
+                    showLogin();
+                })
+                .catch((error) => {
+                    showCreateError(error.message);
+                });
+        }
+
+        function showCreateError(message) {
+            const errorEl = document.getElementById('createError');
+            errorEl.textContent = message;
+            errorEl.classList.remove('hidden');
+        }
+
+        // Load User Data
+        function loadUserData(uid) {
+            db.collection('managers').doc(uid).get()
+                .then((doc) => {
+                    if (doc.exists) {
+                        const data = doc.data();
+                        document.getElementById('userNameDisplay').textContent = data.name;
+                        document.getElementById('userEmailDisplay').textContent = data.email;
+                        document.getElementById('userRoleDisplay').textContent = 
+                            data.role.replace('_', ' ').toUpperCase() + ' Dashboard';
+                    }
+                });
+        }
+
+        // Logout
+        function logout() {
+            auth.signOut().then(() => {
+                location.reload();
+            });
+        }
+
+        // Initialize Dashboard
+        function initializeDashboard() {
+            loadMetrics();
+            loadCharts();
+            loadSalesData();
+            loadFeedbackData();
+            loadStaffPerformance();
+            loadTrainsData();
+            loadMasterData();
+            loadInventoryData();
+            loadMenuItems();
+        }
+
+        // Load Key Metrics
+        function loadMetrics() {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            db.collection('sales')
+                .where('timestamp', '>=', today)
+                .onSnapshot((snapshot) => {
+                    let totalRevenue = 0;
+                    let transactionCount = 0;
+                    
+                    snapshot.forEach((doc) => {
+                        const sale = doc.data();
+                        totalRevenue += sale.total || 0;
+                        transactionCount++;
+                    });
+
+                    document.getElementById('totalRevenue').textContent = '₹' + totalRevenue.toLocaleString('en-IN');
+                    document.getElementById('totalTransactions').textContent = transactionCount;
+                });
+
+            db.collection('feedbacks')
+                .where('status', '==', 'new')
+                .onSnapshot((snapshot) => {
+                    const count = snapshot.size;
+                    document.getElementById('pendingIssues').textContent = count;
+                    
+                    const badge = document.getElementById('alertBadge');
+                    if (count > 0) {
+                        badge.textContent = count;
+                        badge.classList.remove('hidden');
+                    } else {
+                        badge.classList.add('hidden');
+                    }
+                });
+
+            db.collection('trains').onSnapshot((snapshot) => {
+                document.getElementById('activeTrains').textContent = snapshot.size;
+            });
+        }
+
+        // Initialize Charts
+        function loadCharts() {
+            const revenueCtx = document.getElementById('revenueChart');
+            if (revenueCtx) {
+                revenueChart = new Chart(revenueCtx, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'Revenue (₹)',
+                            data: [],
+                            borderColor: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            tension: 0.4,
+                            fill: true
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: { beginAtZero: true, grid: { color: '#f1f5f9' } },
+                            x: { grid: { display: false } }
+                        }
+                    }
+                });
+            }
+
+            const feedbackCtx = document.getElementById('feedbackChart');
+            if (feedbackCtx) {
+                feedbackChart = new Chart(feedbackCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Overcharging', 'Service', 'Food Quality', 'Bill Issue', 'Others'],
+                        datasets: [{
+                            data: [0, 0, 0, 0, 0],
+                            backgroundColor: ['#ef4444', '#f97316', '#eab308', '#8b5cf6', '#6b7280'],
+                            borderWidth: 2,
+                            borderColor: '#ffffff'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'right', labels: { boxWidth: 12, font: { size: 10 } } }
+                        }
+                    }
+                });
+            }
+
+            updateCharts();
+        }
+
+        // Update Charts with Data
+        function updateCharts() {
+            const days = [];
+            const revenues = [];
+            
+            for (let i = 6; i >= 0; i--) {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                days.push(d.toLocaleDateString('en-IN', { weekday: 'short' }));
+                revenues.push(0);
+            }
+
+            db.collection('sales')
+                .orderBy('timestamp', 'desc')
+                .limit(100)
+                .get()
+                .then((snapshot) => {
+                    snapshot.forEach((doc) => {
+                        const sale = doc.data();
+                        if (sale.timestamp) {
+                            const saleDate = sale.timestamp.toDate();
+                            const dayIndex = days.findIndex((day, idx) => {
+                                const checkDate = new Date();
+                                checkDate.setDate(checkDate.getDate() - (6 - idx));
+                                return saleDate.toDateString() === checkDate.toDateString();
+                            });
+                            if (dayIndex !== -1) {
+                                revenues[dayIndex] += sale.total || 0;
+                            }
+                        }
+                    });
+
+                    if (revenueChart) {
+                        revenueChart.data.labels = days;
+                        revenueChart.data.datasets[0].data = revenues;
+                        revenueChart.update();
+                    }
+                });
+
+            db.collection('feedbacks').get().then((snapshot) => {
+                const categories = {
+                    'overcharging': 0,
+                    'service': 0,
+                    'food-quality': 0,
+                    'bill': 0,
+                    'other': 0
+                };
+
+                snapshot.forEach((doc) => {
+                    const fb = doc.data();
+                    if (categories[fb.issueType] !== undefined) {
+                        categories[fb.issueType]++;
+                    } else {
+                        categories['other']++;
+                    }
+                });
+
+                if (feedbackChart) {
+                    feedbackChart.data.datasets[0].data = Object.values(categories);
+                    feedbackChart.update();
+                }
+            });
+        }
+
+        // Load Sales Data
+        function loadSalesData() {
+            db.collection('sales').orderBy('timestamp', 'desc').limit(50).onSnapshot((snapshot) => {
+                allSales = [];
+                snapshot.forEach((doc) => {
+                    allSales.push({ id: doc.id, ...doc.data() });
+                });
+                renderSalesTable();
+            });
+        }
+
+        function renderSalesTable() {
+            const tbody = document.getElementById('salesTableBody');
+            const trainFilter = document.getElementById('trainFilter').value;
+            
+            let filtered = allSales;
+            if (trainFilter !== 'all') {
+                filtered = filtered.filter(s => s.trainNumber === trainFilter);
+            }
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">No sales data available</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = filtered.map(sale => {
+                const time = sale.timestamp ? sale.timestamp.toDate().toLocaleString('en-IN') : 'N/A';
+                const items = sale.items ? sale.items.map(i => `${i.name} x${i.qty}`).join(', ') : 'N/A';
+                
+                return `
+                    <tr class="hover:bg-slate-50 transition">
+                        <td class="px-4 py-3 text-sm text-slate-600">${time}</td>
+                        <td class="px-4 py-3 font-medium text-slate-800">${sale.trainNumber || 'N/A'}</td>
+                        <td class="px-4 py-3 text-slate-600">${sale.staffId || 'N/A'}</td>
+                        <td class="px-4 py-3 text-sm text-slate-600 max-w-xs truncate">${items}</td>
+                        <td class="px-4 py-3 text-right font-bold text-green-600">₹${(sale.total || 0).toLocaleString('en-IN')}</td>
+                        <td class="px-4 py-3 text-center">
+                            <span class="bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs">Completed</span>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Load Feedback Data
+        function loadFeedbackData() {
+            db.collection('feedbacks').orderBy('timestamp', 'desc').limit(50).onSnapshot((snapshot) => {
+                allFeedback = [];
+                snapshot.forEach((doc) => {
+                    allFeedback.push({ id: doc.id, ...doc.data() });
+                });
+                renderFeedbackList();
+            });
+        }
+
+        function renderFeedbackList() {
+            const filter = document.getElementById('feedbackFilter').value;
+            const container = document.getElementById('feedbackList');
+            
+            let filtered = allFeedback;
+            
+            if (filter === 'complaint') {
+                filtered = filtered.filter(f => f.rating <= 2 || f.issueType === 'overcharging');
+            } else if (filter === 'positive') {
+                filtered = filtered.filter(f => f.rating >= 4);
+            }
+
+            if (filtered.length === 0) {
+                container.innerHTML = '<p class="text-center text-slate-400 py-8">No feedback found</p>';
+                return;
+            }
+
+            const issueLabels = {
+                'overcharging': 'Overcharging',
+                'service': 'Service Issue',
+                'food-quality': 'Food Quality',
+                'availability': 'Not Available',
+                'bill': 'No Bill',
+                'staff-behavior': 'Staff Behavior',
+                'appreciation': 'Appreciation',
+                'other': 'Other'
+            };
+
+            container.innerHTML = filtered.map(fb => {
+                const isUrgent = fb.rating <= 2 || fb.issueType === 'overcharging';
+                const isPositive = fb.rating >= 4;
+                const borderColor = isUrgent ? 'border-red-500' : isPositive ? 'border-green-500' : 'border-yellow-500';
+                const bgColor = isUrgent ? 'bg-red-50' : isPositive ? 'bg-green-50' : 'bg-yellow-50';
+                const time = fb.timestamp ? fb.timestamp.toDate().toLocaleString('en-IN') : 'N/A';
+
+                return `
+                    <div class="p-4 border-l-4 ${borderColor} ${bgColor} rounded-lg">
+                        <div class="flex justify-between items-start mb-2">
+                            <div class="flex items-center space-x-2">
+                                <span class="text-yellow-400 text-sm">${'★'.repeat(fb.rating || 0)}${'☆'.repeat(5 - (fb.rating || 0))}</span>
+                                <span class="text-xs text-slate-500">${time}</span>
+                            </div>
+                            ${fb.status === 'new' 
+                                ? '<span class="bg-red-100 text-red-700 px-2 py-1 rounded text-xs font-bold">NEW</span>' 
+                                : '<span class="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold">RESOLVED</span>'}
+                        </div>
+                        <p class="font-bold text-slate-800 mb-1">${issueLabels[fb.issueType] || fb.issueType}</p>
+                        <p class="text-sm text-slate-600 mb-2">${fb.description}</p>
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs text-slate-500">Train ${fb.trainNumber} • Coach ${fb.coach} • Seat ${fb.seat}</span>
+                            ${fb.status === 'new' ? `
+                                <button onclick="resolveFeedback('${fb.id}')" class="text-xs bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Resolve</button>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function resolveFeedback(docId) {
+            const response = prompt('Enter resolution notes (optional):');
+            
+            db.collection('feedbacks').doc(docId).update({
+                status: 'resolved',
+                managerResponse: response || 'Resolved',
+                resolvedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                resolvedBy: currentUser.uid
+            });
+        }
+
+        // Load Staff Performance
+        function loadStaffPerformance() {
+            db.collection('sales').onSnapshot((snapshot) => {
+                const staffStats = {};
+                
+                snapshot.forEach((doc) => {
+                    const sale = doc.data();
+                    const key = `${sale.staffId}_${sale.trainNumber}`;
+                    
+                    if (!staffStats[key]) {
+                        staffStats[key] = {
+                            staffId: sale.staffId,
+                            trainNumber: sale.trainNumber,
+                            totalSales: 0,
+                            transactions: 0
+                        };
+                    }
+                    
+                    staffStats[key].totalSales += sale.total || 0;
+                    staffStats[key].transactions += 1;
+                });
+
+                renderStaffTable(staffStats);
+            });
+        }
+
+        function renderStaffTable(staffStats) {
+            const tbody = document.getElementById('staffTableBody');
+            const sortedStaff = Object.values(staffStats).sort((a, b) => b.totalSales - a.totalSales);
+
+            if (sortedStaff.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">No staff data available</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = sortedStaff.map((staff, index) => {
+                const avgSale = staff.transactions > 0 ? Math.round(staff.totalSales / staff.transactions) : 0;
+                let rankBadge = '';
+                
+                if (index === 0) rankBadge = '🥇';
+                else if (index === 1) rankBadge = '🥈';
+                else if (index === 2) rankBadge = '🥉';
+                else rankBadge = `#${index + 1}`;
+
+                let performance = '';
+                if (staff.totalSales > 50000) performance = '<span class="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">Excellent</span>';
+                else if (staff.totalSales > 20000) performance = '<span class="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-bold">Good</span>';
+                else performance = '<span class="bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full text-xs font-bold">Average</span>';
+
+                return `
+                    <tr class="hover:bg-slate-50 transition">
+                        <td class="px-4 py-4 text-2xl">${rankBadge}</td>
+                        <td class="px-4 py-4 font-medium text-slate-800">${staff.staffId}</td>
+                        <td class="px-4 py-4 text-slate-600">${staff.trainNumber}</td>
+                        <td class="px-4 py-4 text-right font-bold text-green-600">₹${staff.totalSales.toLocaleString('en-IN')}</td>
+                        <td class="px-4 py-4 text-right text-slate-600">${staff.transactions}</td>
+                        <td class="px-4 py-4 text-center">${performance}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Load Trains Data
+        function loadTrainsData() {
+            db.collection('trains').onSnapshot((snapshot) => {
+                allTrains = [];
+                snapshot.forEach((doc) => {
+                    allTrains.push({ id: doc.id, ...doc.data() });
+                });
+                renderTrainsList();
+                updateTrainFilter();
+            });
+        }
+
+        function renderTrainsList() {
+            const container = document.getElementById('trainsList');
+            
+            if (allTrains.length === 0) {
+                container.innerHTML = '<p class="text-center text-slate-400 py-8 col-span-3">No trains added yet</p>';
+                return;
+            }
+
+            container.innerHTML = allTrains.map(train => {
+                return `
+                    <div class="bg-slate-50 rounded-xl p-6 border border-slate-200 hover:shadow-md transition">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <h4 class="font-bold text-slate-800 text-lg">${train.number}</h4>
+                                <p class="text-sm text-slate-600">${train.name}</p>
+                                <p class="text-xs text-slate-500 mt-1">${train.route}</p>
+                            </div>
+                            <span class="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">Active</span>
+                        </div>
+                        <div class="space-y-2 text-sm">
+                            <div class="flex justify-between">
+                                <span class="text-slate-500">Train Manager:</span>
+                                <span class="font-medium text-slate-800">${train.trainManagerName || 'Not Assigned'}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-slate-500">Yard Manager:</span>
+                                <span class="font-medium text-slate-800">${train.yardManagerName || 'Not Assigned'}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-slate-500">Cluster Manager:</span>
+                                <span class="font-medium text-slate-800">${train.clusterManagerName || 'Not Assigned'}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function updateTrainFilter() {
+            const select = document.getElementById('trainFilter');
+            const inventorySelect = document.getElementById('inventoryTrainFilter');
+            const currentValue = select.value;
+            
+            select.innerHTML = '<option value="all">All Trains</option>';
+            inventorySelect.innerHTML = '<option value="all">All Trains</option>';
+            
+            allTrains.forEach(train => {
+                const option = document.createElement('option');
+                option.value = train.number;
+                option.textContent = `${train.number} - ${train.name}`;
+                select.appendChild(option);
+                
+                const invOption = document.createElement('option');
+                invOption.value = train.number;
+                invOption.textContent = `${train.number} - ${train.name}`;
+                inventorySelect.appendChild(invOption);
+            });
+            
+            select.value = currentValue;
+        }
+
+        // ==================== INVENTORY MANAGEMENT FUNCTIONS ====================
+
+        // Load Menu Items for Inventory
+        function loadMenuItems() {
+            db.collection('menuItems').onSnapshot((snapshot) => {
+                menuItems = [];
+                snapshot.forEach((doc) => {
+                    menuItems.push({ id: doc.id, ...doc.data() });
+                });
+                updateStockItemSelect();
+            });
+        }
+
+        function updateStockItemSelect() {
+            const select = document.getElementById('stockItemSelect');
+            select.innerHTML = '<option value="">Select Item...</option>';
+            
+            menuItems.forEach(item => {
+                const option = document.createElement('option');
+                option.value = item.id;
+                option.textContent = `${item.name} (₹${item.price})`;
+                option.dataset.name = item.name;
+                select.appendChild(option);
+            });
+        }
+
+        // Load Inventory Data
+        function loadInventoryData() {
+            db.collection('inventory').onSnapshot((snapshot) => {
+                allInventory = [];
+                snapshot.forEach((doc) => {
+                    allInventory.push({ id: doc.id, ...doc.data() });
+                });
+                renderInventoryTable();
+                updateInventoryMetrics();
+                checkLowStock();
+            });
+
+            // Load inventory log
+            loadInventoryLog();
+        }
+
+        function renderInventoryTable() {
+            const tbody = document.getElementById('inventoryTableBody');
+            const trainFilter = document.getElementById('inventoryTrainFilter').value;
+            
+            let filtered = allInventory;
+            if (trainFilter !== 'all') {
+                filtered = filtered.filter(inv => inv.trainNumber === trainFilter);
+            }
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="px-4 py-8 text-center text-slate-400">No inventory data available</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = filtered.map(inv => {
+                const status = getStockStatus(inv.currentStock, inv.minStockLevel);
+                const statusClass = status === 'Critical' ? 'bg-red-100 text-red-700' : 
+                                   status === 'Low' ? 'bg-amber-100 text-amber-700' : 
+                                   'bg-green-100 text-green-700';
+                
+                const rowClass = status === 'Critical' ? 'low-stock' : 
+                                status === 'Low' ? 'medium-stock' : 'good-stock';
+                
+                const lastUpdated = inv.lastUpdated ? 
+                    (inv.lastUpdated.toDate ? inv.lastUpdated.toDate().toLocaleString('en-IN') : 'Recently') : 
+                    'N/A';
+
+                return `
+                    <tr class="inventory-card ${rowClass} border-l-4 ${status === 'Critical' ? 'border-red-500' : status === 'Low' ? 'border-amber-500' : 'border-green-500'}">
+                        <td class="px-4 py-3 font-medium text-slate-800">${inv.itemName}</td>
+                        <td class="px-4 py-3 text-slate-600">${inv.trainNumber}</td>
+                        <td class="px-4 py-3 text-right font-bold ${status === 'Critical' ? 'text-red-600' : status === 'Low' ? 'text-amber-600' : 'text-green-600'}">
+                            ${inv.currentStock}
+                        </td>
+                        <td class="px-4 py-3 text-right text-slate-600">${inv.minStockLevel}</td>
+                        <td class="px-4 py-3 text-center">
+                            <span class="${statusClass} px-3 py-1 rounded-full text-xs font-bold">${status}</span>
+                        </td>
+                        <td class="px-4 py-3 text-center text-xs text-slate-500">${lastUpdated}</td>
+                        <td class="px-4 py-3 text-center">
+                            <button onclick="quickRestock('${inv.id}', '${inv.itemName}', '${inv.trainNumber}')" 
+                                class="text-green-600 hover:text-green-800 mr-2" title="Quick Add">
+                                <i class="fas fa-plus-circle text-lg"></i>
+                            </button>
+                            <button onclick="editStock('${inv.id}')" class="text-blue-600 hover:text-blue-800" title="Edit">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function getStockStatus(current, min) {
+            if (current <= 0) return 'Critical';
+            if (current <= min) return 'Low';
+            return 'Good';
+        }
+
+        function updateInventoryMetrics() {
+            const total = allInventory.length;
+            const critical = allInventory.filter(inv => inv.currentStock <= 0).length;
+            const low = allInventory.filter(inv => inv.currentStock > 0 && inv.currentStock <= inv.minStockLevel).length;
+            const healthy = allInventory.filter(inv => inv.currentStock > inv.minStockLevel).length;
+
+            document.getElementById('totalInventoryItems').textContent = total;
+            document.getElementById('criticalStockCount').textContent = critical;
+            document.getElementById('lowStockCount').textContent = low;
+            document.getElementById('healthyStockCount').textContent = healthy;
+        }
+
+        function checkLowStock() {
+            const lowStockItems = allInventory.filter(inv => inv.currentStock <= inv.minStockLevel);
+            const banner = document.getElementById('inventoryAlertBanner');
+            const badge = document.getElementById('inventoryBadge');
+            
+            if (lowStockItems.length > 0) {
+                document.getElementById('lowStockItems').textContent = lowStockItems.length;
+                banner.classList.remove('hidden');
+                badge.textContent = lowStockItems.length;
+                badge.classList.remove('hidden');
+            } else {
+                banner.classList.add('hidden');
+                badge.classList.add('hidden');
+            }
+        }
+
+        function loadInventoryLog() {
+            db.collection('inventoryLog').orderBy('timestamp', 'desc').limit(20).onSnapshot((snapshot) => {
+                const container = document.getElementById('inventoryLog');
+                
+                if (snapshot.empty) {
+                    container.innerHTML = '<p class="text-center text-slate-400 py-4">No recent movements</p>';
+                    return;
+                }
+
+                container.innerHTML = snapshot.docs.map(doc => {
+                    const log = doc.data();
+                    const time = log.timestamp ? log.timestamp.toDate().toLocaleString('en-IN') : 'N/A';
+                    const isAddition = log.type === 'add';
+                    
+                    return `
+                        <div class="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200">
+                            <div class="flex items-center">
+                                <div class="w-8 h-8 rounded-full ${isAddition ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'} flex items-center justify-center mr-3">
+                                    <i class="fas ${isAddition ? 'fa-arrow-down' : 'fa-arrow-up'}"></i>
+                                </div>
+                                <div>
+                                    <p class="text-sm font-medium text-slate-800">${log.itemName} - ${log.trainNumber}</p>
+                                    <p class="text-xs text-slate-500">${log.reason || 'Stock update'} by ${log.updatedBy}</p>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-sm font-bold ${isAddition ? 'text-green-600' : 'text-red-600'}">
+                                    ${isAddition ? '+' : '-'}${log.quantity}
+                                </p>
+                                <p class="text-xs text-slate-400">${time}</p>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            });
+        }
+
+        // Add Stock Modal Functions
+        function showAddStockModal() {
+            document.getElementById('addStockModal').classList.add('show');
+            updateStockTrainSelect();
+        }
+
+        function closeAddStockModal() {
+            document.getElementById('addStockModal').classList.remove('show');
+            document.getElementById('stockTrainSelect').value = '';
+            document.getElementById('stockItemSelect').value = '';
+            document.getElementById('stockQtyInput').value = '';
+            document.getElementById('stockMinLevelInput').value = '';
+        }
+
+        function updateStockTrainSelect() {
+            const select = document.getElementById('stockTrainSelect');
+            select.innerHTML = '<option value="">Select Train...</option>';
+            
+            allTrains.forEach(train => {
+                const option = document.createElement('option');
+                option.value = train.number;
+                option.textContent = `${train.number} - ${train.name}`;
+                select.appendChild(option);
+            });
+        }
+
+        function saveStockAddition() {
+            const trainNumber = document.getElementById('stockTrainSelect').value;
+            const itemId = document.getElementById('stockItemSelect').value;
+            const qty = parseInt(document.getElementById('stockQtyInput').value);
+            const minLevel = parseInt(document.getElementById('stockMinLevelInput').value) || 10;
+
+            if (!trainNumber || !itemId || !qty) {
+                alert('Please fill all required fields');
+                return;
+            }
+
+            const item = menuItems.find(i => i.id === itemId);
+            if (!item) {
+                alert('Item not found');
+                return;
+            }
+
+            // Check if inventory exists for this item-train combination
+            const existingInv = allInventory.find(inv => 
+                inv.trainNumber === trainNumber && inv.itemId === itemId
+            );
+
+            if (existingInv) {
+                // Update existing
+                const newStock = existingInv.currentStock + qty;
+                db.collection('inventory').doc(existingInv.id).update({
+                    currentStock: newStock,
+                    minStockLevel: minLevel,
+                    lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                }).then(() => {
+                    logInventoryMovement(existingInv.id, item.name, trainNumber, qty, 'add', 'Manual stock addition');
+                    closeAddStockModal();
+                    alert(`Stock updated! New quantity: ${newStock}`);
+                });
+            } else {
+                // Create new inventory entry
+                db.collection('inventory').add({
+                    trainNumber: trainNumber,
+                    itemId: itemId,
+                    itemName: item.name,
+                    currentStock: qty,
+                    minStockLevel: minLevel,
+                    lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                }).then((docRef) => {
+                    logInventoryMovement(docRef.id, item.name, trainNumber, qty, 'add', 'Initial stock');
+                    closeAddStockModal();
+                    alert(`Stock added! Quantity: ${qty}`);
+                });
+            }
+        }
+
+        function logInventoryMovement(inventoryId, itemName, trainNumber, quantity, type, reason) {
+            db.collection('inventoryLog').add({
+                inventoryId: inventoryId,
+                itemName: itemName,
+                trainNumber: trainNumber,
+                quantity: quantity,
+                type: type,
+                reason: reason,
+                updatedBy: currentUser ? currentUser.email : 'Unknown',
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        }
+
+        function quickRestock(inventoryId, itemName, trainNumber) {
+            const qty = prompt(`Enter quantity to add for ${itemName}:`);
+            if (!qty || isNaN(qty) || qty <= 0) return;
+
+            const inv = allInventory.find(i => i.id === inventoryId);
+            if (inv) {
+                const newStock = inv.currentStock + parseInt(qty);
+                db.collection('inventory').doc(inventoryId).update({
+                    currentStock: newStock,
+                    lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                }).then(() => {
+                    logInventoryMovement(inventoryId, itemName, trainNumber, parseInt(qty), 'add', 'Quick restock');
+                    alert(`Stock updated! New quantity: ${newStock}`);
+                });
+            }
+        }
+
+        function editStock(inventoryId) {
+            const inv = allInventory.find(i => i.id === inventoryId);
+            if (!inv) return;
+
+            const newStock = prompt(`Current stock for ${inv.itemName}: ${inv.currentStock}\nEnter new stock level:`, inv.currentStock);
+            if (newStock === null) return;
+            
+            const newMin = prompt(`Current minimum level: ${inv.minStockLevel}\nEnter new minimum level:`, inv.minStockLevel);
+
+            if (newStock !== null && !isNaN(newStock)) {
+                db.collection('inventory').doc(inventoryId).update({
+                    currentStock: parseInt(newStock),
+                    minStockLevel: newMin !== null ? parseInt(newMin) : inv.minStockLevel,
+                    lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                }).then(() => {
+                    const diff = parseInt(newStock) - inv.currentStock;
+                    if (diff !== 0) {
+                        logInventoryMovement(inventoryId, inv.itemName, inv.trainNumber, Math.abs(diff), diff > 0 ? 'add' : 'remove', 'Manual adjustment');
+                    }
+                    alert('Stock updated successfully!');
+                });
+            }
+        }
+
+        function exportInventory() {
+            const headers = ['Item Name', 'Train Number', 'Current Stock', 'Min Level', 'Status', 'Last Updated'];
+            const rows = allInventory.map(inv => {
+                const status = getStockStatus(inv.currentStock, inv.minStockLevel);
+                const lastUpdated = inv.lastUpdated ? 
+                    (inv.lastUpdated.toDate ? inv.lastUpdated.toDate().toLocaleString('en-IN') : 'N/A') : 'N/A';
+                
+                return [
+                    inv.itemName,
+                    inv.trainNumber,
+                    inv.currentStock,
+                    inv.minStockLevel,
+                    status,
+                    lastUpdated
+                ].join(',');
+            });
+            
+            downloadCSV('RK-Inventory-Export.csv', [headers.join(','), ...rows].join('\n'));
+        }
+
+        // ==================== END INVENTORY FUNCTIONS ====================
+
+        // Master Data Management
+        function showMasterData() {
+            document.getElementById('masterDataModal').classList.remove('hidden');
+            loadMasterData();
+        }
+
+        function closeMasterData() {
+            document.getElementById('masterDataModal').classList.add('hidden');
+        }
+
+        function loadMasterData() {
+            db.collection('managers').get().then((snapshot) => {
+                allManagers = [];
+                snapshot.forEach((doc) => {
+                    allManagers.push({ id: doc.id, ...doc.data() });
+                });
+                
+                populateManagerDropdowns();
+            });
+
+            const masterList = document.getElementById('masterTrainsList');
+            if (allTrains.length === 0) {
+                masterList.innerHTML = '<p class="text-slate-400 text-center py-4">No trains added yet</p>';
+            } else {
+                masterList.innerHTML = allTrains.map(train => `
+                    <div class="flex justify-between items-center p-3 bg-white rounded-lg border border-slate-200">
+                        <div>
+                            <span class="font-bold text-slate-800">${train.number}</span>
+                            <span class="text-sm text-slate-600 ml-2">${train.name}</span>
+                        </div>
+                        <button onclick="deleteTrain('${train.id}')" class="text-red-500 hover:text-red-700">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function populateManagerDropdowns() {
+            const trainManagerSelect = document.getElementById('trainManager');
+            const yardManagerSelect = document.getElementById('yardManager');
+            const clusterManagerSelect = document.getElementById('clusterManager');
+
+            const trainManagers = allManagers.filter(m => m.role === 'train_manager');
+            const yardManagers = allManagers.filter(m => m.role === 'yard_manager');
+            const clusterManagers = allManagers.filter(m => m.role === 'cluster_manager');
+
+            trainManagerSelect.innerHTML = '<option value="">Select Train Manager</option>';
+            yardManagerSelect.innerHTML = '<option value="">Select Yard Manager</option>';
+            clusterManagerSelect.innerHTML = '<option value="">Select Cluster Manager</option>';
+
+            trainManagers.forEach(m => {
+                const option = document.createElement('option');
+                option.value = m.uid;
+                option.textContent = m.name;
+                trainManagerSelect.appendChild(option);
+            });
+
+            yardManagers.forEach(m => {
+                const option = document.createElement('option');
+                option.value = m.uid;
+                option.textContent = m.name;
+                yardManagerSelect.appendChild(option);
+            });
+
+            clusterManagers.forEach(m => {
+                const option = document.createElement('option');
+                option.value = m.uid;
+                option.textContent = m.name;
+                clusterManagerSelect.appendChild(option);
+            });
+        }
+
+        function addTrain() {
+            const number = document.getElementById('trainNumber').value;
+            const name = document.getElementById('trainName').value;
+            const route = document.getElementById('trainRoute').value;
+            const trainManagerId = document.getElementById('trainManager').value;
+            const yardManagerId = document.getElementById('yardManager').value;
+            const clusterManagerId = document.getElementById('clusterManager').value;
+
+            if (!number || !name) {
+                alert('Please enter train number and name');
+                return;
+            }
+
+            const trainManager = allManagers.find(m => m.uid === trainManagerId);
+            const yardManager = allManagers.find(m => m.uid === yardManagerId);
+            const clusterManager = allManagers.find(m => m.uid === clusterManagerId);
+
+            db.collection('trains').add({
+                number: number,
+                name: name,
+                route: route,
+                trainManagerId: trainManagerId,
+                trainManagerName: trainManager ? trainManager.name : '',
+                yardManagerId: yardManagerId,
+                yardManagerName: yardManager ? yardManager.name : '',
+                clusterManagerId: clusterManagerId,
+                clusterManagerName: clusterManager ? clusterManager.name : '',
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                status: 'active'
+            }).then(() => {
+                alert('Train added successfully!');
+                document.getElementById('trainNumber').value = '';
+                document.getElementById('trainName').value = '';
+                document.getElementById('trainRoute').value = '';
+            }).catch((error) => {
+                alert('Error adding train: ' + error.message);
+            });
+        }
+
+        function addManager() {
+            const name = document.getElementById('managerName').value;
+            const email = document.getElementById('managerEmail').value;
+            const phone = document.getElementById('managerPhone').value;
+            const role = document.getElementById('managerRole').value;
+
+            if (!name || !email || !phone) {
+                alert('Please fill all fields');
+                return;
+            }
+
+            const tempPassword = Math.random().toString(36).slice(-8);
+            
+            auth.createUserWithEmailAndPassword(email, tempPassword)
+                .then((userCredential) => {
+                    const userData = {
+                        uid: userCredential.user.uid,
+                        name: name,
+                        email: email,
+                        phone: phone,
+                        role: role,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        tempPassword: tempPassword
+                    };
+
+                    return db.collection('managers').doc(userCredential.user.uid).set(userData);
+                })
+                .then(() => {
+                    alert(`Manager added successfully! Temporary password: ${tempPassword}`);
+                    document.getElementById('managerName').value = '';
+                    document.getElementById('managerEmail').value = '';
+                    document.getElementById('managerPhone').value = '';
+                    loadMasterData();
+                })
+                .catch((error) => {
+                    alert('Error creating manager: ' + error.message);
+                });
+        }
+
+        function deleteTrain(trainId) {
+            if (!confirm('Are you sure you want to delete this train?')) return;
+            
+            db.collection('trains').doc(trainId).delete()
+                .then(() => {
+                    alert('Train deleted successfully');
+                })
+                .catch((error) => {
+                    alert('Error deleting train: ' + error.message);
+                });
+        }
+
+        // Tab Switching
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.add('hidden');
+            });
+            
+            document.querySelectorAll('[id^="tab-"]').forEach(btn => {
+                btn.classList.remove('tab-active');
+                btn.classList.add('text-slate-600');
+            });
+            
+            document.getElementById('content-' + tabName).classList.remove('hidden');
+            
+            document.getElementById('tab-' + tabName).classList.add('tab-active');
+            document.getElementById('tab-' + tabName).classList.remove('text-slate-600');
+        }
+
+        // Export Functions
+        function exportSales() {
+            const headers = ['Date', 'Transaction ID', 'Staff', 'Train', 'Total', 'Items', 'Customer Phone'];
+            const rows = allSales.map(sale => [
+                sale.timestamp ? sale.timestamp.toDate().toLocaleString('en-IN') : '',
+                sale.transactionId || '',
+                sale.staffId || '',
+                sale.trainNumber || '',
+                sale.total || '',
+                (sale.items || []).map(i => `${i.name}x${i.qty}`).join(', '),
+                sale.customerPhone || ''
+            ].join(','));
+
+            downloadCSV('RK-Sales-Export.csv', [headers.join(','), ...rows].join('\n'));
+        }
+
+        function exportStaffReport() {
+            alert('Staff report export - This will generate a detailed performance report');
+        }
+
+        function downloadCSV(filename, csvContent) {
+            const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        }
+
+        // Auto-refresh data every 30 seconds
+        setInterval(() => {
+            if (currentUser) {
+                updateCharts();
+            }
+        }, 30000);
+    </script>
+</body>
+</html>
